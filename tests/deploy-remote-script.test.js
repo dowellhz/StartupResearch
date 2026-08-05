@@ -21,6 +21,7 @@ test("remote deploy protects runtime state and credentials", () => {
 test("remote deploy verifies service, public health, OpenAlex and commit identity", () => {
   assert.match(script, /systemctl restart/);
   assert.match(script, /PUBLIC_HEALTH_URL/);
+  assert.match(script, /https:\/\/c\.nlvcwiki\.com\/api\/health/);
   assert.match(script, /openalex_research_search/);
   assert.match(script, /remote deployment version mismatch/);
 });
