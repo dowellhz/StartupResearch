@@ -19,13 +19,21 @@ export function assessReportQuality(markdown, options = {}) {
     reasoning: assessReasoning(text, sources, findings),
     identity: assessIdentity(options.companyIdentity, findings)
   };
+  assessStructuredArtifacts(options, findings);
   const score = Object.values(components).reduce((sum, value) => sum + value, 0);
   const fatalCount = findings.filter((item) => item.severity === "fatal").length;
   return {
     ok: fatalCount === 0 && score >= 70,
     score,
     components,
-    metrics: buildQualityMetrics({ text, sources, crossCheck: options.crossCheck, document: options.document }),
+    metrics: buildQualityMetrics({
+      text,
+      sources,
+      crossCheck: options.crossCheck,
+      document: options.document,
+      businessAudit: options.businessAudit,
+      claimLedger: options.claimLedger
+    }),
     findings
   };
 }
@@ -133,7 +141,21 @@ function assessIdentity(identity, findings) {
   return identity.acceptedName ? 4 : 0;
 }
 
-function buildQualityMetrics({ text, sources, crossCheck, document }) {
+function assessStructuredArtifacts({ businessAudit, claimLedger }, findings) {
+  const auditSummary = businessAudit?.summary || {};
+  const ledgerSummary = claimLedger?.summary || {};
+  if (auditSummary.conflictCount) {
+    findings.push(finding("business_metric_conflict", "warn", `BP 数字与经营假设审计发现 ${auditSummary.conflictCount} 项冲突`));
+  }
+  if (ledgerSummary.conflicted) {
+    findings.push(finding("claim_evidence_conflict", "warn", `${ledgerSummary.conflicted} 条关键声明存在公开证据冲突`));
+  }
+  if (ledgerSummary.highPriorityOpen) {
+    findings.push(finding("high_priority_claims_open", "warn", `${ledgerSummary.highPriorityOpen} 条高优先级声明仍缺少直接公开证据`));
+  }
+}
+
+function buildQualityMetrics({ text, sources, crossCheck, document, businessAudit, claimLedger }) {
   const evidenceRichCount = sources.filter(hasEvidenceExcerpt).length;
   const coverage = Array.isArray(crossCheck?.coverage) ? crossCheck.coverage : [];
   const coveredClaimCount = coverage.filter((item) => item.status && item.status !== "unverified" || item.hasCandidateEvidence).length;
@@ -145,6 +167,12 @@ function buildQualityMetrics({ text, sources, crossCheck, document }) {
     coveredClaimCount,
     claimCoverage: safeRatio(coveredClaimCount, coverage.length),
     primarySourceCount: sources.filter((source) => source.sourceTier === "primary").length,
+    claimLedgerCount: Number(claimLedger?.summary?.total || 0),
+    supportedLedgerClaimCount: Number(claimLedger?.summary?.supported || 0),
+    conflictedLedgerClaimCount: Number(claimLedger?.summary?.conflicted || 0),
+    auditedMetricCount: Number(businessAudit?.summary?.metricCount || 0),
+    numericCheckCount: Number(businessAudit?.summary?.checkCount || 0),
+    numericConflictCount: Number(businessAudit?.summary?.conflictCount || 0),
     reportCharacterCount: text.length,
     extractionCompleteness: Number(document?.extractionCompleteness ?? 1)
   };

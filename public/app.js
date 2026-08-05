@@ -373,6 +373,8 @@ function renderQualitySummary(container, quality) {
   const values = [
     metrics.sourceCount === undefined ? "" : `证据片段 ${metrics.evidenceRichCount || 0}/${metrics.sourceCount}`,
     metrics.importantClaimCount === undefined ? "" : `声明覆盖 ${metrics.coveredClaimCount || 0}/${metrics.importantClaimCount}`,
+    metrics.claimLedgerCount ? `声明卡 ${metrics.supportedLedgerClaimCount || 0}/${metrics.claimLedgerCount} 获支持` : "",
+    metrics.auditedMetricCount ? `数字审计 ${metrics.numericCheckCount || 0} 项检查` : "",
     metrics.extractionCompleteness === undefined ? "" : `解析完整度 ${Math.round(Number(metrics.extractionCompleteness) * 100)}%`
   ].filter(Boolean);
   container.innerHTML = `
