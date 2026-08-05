@@ -1,6 +1,7 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
 import { bindComposerInput } from "./composer-keyboard.js";
 import { createComposerDraftController, lastUserInput } from "./composer-draft.js";
+import { ATTACHMENT_SUBMISSION, CANCEL_SUBMISSION, COMPANY_RESEARCH_SUBMISSION, decideComposerSubmission, FOLLOWUP_SUBMISSION } from "./composer-submit-route.js";
 import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, createComposerTaskModeController } from "./composer-task-mode.js";
 import { bindFileDrop } from "./file-drop.js";
 import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evidence-refresh-ui.js";
@@ -154,9 +155,19 @@ function clearFile() {
 async function submitComposer(event) {
   event.preventDefault();
   const prompt = elements.promptInput.value.trim();
-  if (state.taskType === COMPANY_PRE_RESEARCH) return startCompanyPreResearch(prompt);
-  if (state.currentReview?.reportAvailable && !state.file) return askFollowup(prompt);
-  if (!state.file) return toast("请先上传商业计划书");
+  const submission = decideComposerSubmission({
+    taskType: state.taskType,
+    hasCurrentReport: Boolean(state.currentReview?.reportAvailable),
+    hasFile: Boolean(state.file),
+    confirmImpl: window.confirm.bind(window)
+  });
+  if (submission === CANCEL_SUBMISSION) return;
+  if (submission === FOLLOWUP_SUBMISSION) return askFollowup(prompt);
+  if (submission === COMPANY_RESEARCH_SUBMISSION) {
+    taskMode.selectCompanyResearchMode();
+    return startCompanyPreResearch(prompt);
+  }
+  if (submission !== ATTACHMENT_SUBMISSION) return;
   const companyName = elements.companyInput.value.trim();
   setUploadAnalysisState(elements, { active: true, matchingRequired: Boolean(state.currentReview?.reportAvailable) });
   setBusy(true);
