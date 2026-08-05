@@ -10,6 +10,7 @@ import { buildConversationExport } from "./src/domain/conversation-export-servic
 import { createEvidenceRefreshService } from "./src/domain/evidence-refresh-service.js";
 import { createInvestmentAnalysisService } from "./src/domain/investment-analysis-service.js";
 import { createReviewManagerService } from "./src/domain/review-manager-service.js";
+import { normalizeReviewReport } from "./src/domain/report-summary-service.js";
 import { createDeepSeekModelService } from "./src/infra/deepseek-model-service.js";
 import { createBrowserSessionService } from "./src/infra/browser-session-service.js";
 import { createDocumentExtractionService } from "./src/infra/document-extraction-service.js";
@@ -162,13 +163,10 @@ async function streamAnswer(req, res, id, ownerId) {
 async function downloadPdf(res, id, ownerId) {
   const review = await manager.get(id, { ownerId });
   if (!review.report) throw Object.assign(new Error("报告尚未生成"), { statusCode: 409 });
-  let buffer = await repository.getPdf(id, review.pdfStoragePath);
-  if (!buffer) {
-    buffer = await pdf.render({ title: reportTitle(review), markdown: review.report });
-    const pdfStoragePath = await repository.savePdf(id, buffer, { date: review.createdAt || review.completedAt });
-    const job = await repository.get(id);
-    if (job) await repository.save({ ...job, pdfStoragePath });
-  }
+  const buffer = await pdf.render({ title: reportTitle(review), markdown: review.report });
+  const pdfStoragePath = await repository.savePdf(id, buffer, { date: review.createdAt || review.completedAt });
+  const job = await repository.get(id);
+  if (job) await repository.save({ ...job, pdfStoragePath });
   const filename = encodeURIComponent(`${safeFilename(review.companyName || "BP")}-${review.taskType === "company_pre_research" ? "公司预研报告" : "核查报告"}.pdf`);
   res.writeHead(200, {
     "Content-Type": "application/pdf",
@@ -275,8 +273,9 @@ server.listen(config.port, config.host, async () => {
 
 async function ensureStoredPdf(job) {
   if (await repository.getPdf(job.id, job.pdfStoragePath)) return;
-  const markdown = await repository.getReport(job.id);
-  if (!markdown) return;
+  const storedReport = await repository.getReport(job.id);
+  if (!storedReport) return;
+  const markdown = normalizeReviewReport(job, storedReport);
   const buffer = await pdf.render({ title: reportTitle(job), markdown });
   const pdfStoragePath = await repository.savePdf(job.id, buffer, { date: job.createdAt || job.completedAt });
   await repository.save({ ...job, pdfStoragePath });

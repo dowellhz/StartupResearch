@@ -173,7 +173,8 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
   async function qualityGate(context) {
     const report = stabilizeCompanyResearchReport(context.report, {
       companyName: context.job.companyName,
-      sourceCount: context.sources.length
+      sources: context.sources,
+      analysis: context.analysis
     });
     const quality = assessCompanyResearchQuality(report, {
       sources: context.sources,

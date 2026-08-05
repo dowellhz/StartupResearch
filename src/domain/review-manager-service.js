@@ -3,6 +3,7 @@ import { createReviewJob } from "./bp-review-pipeline.js";
 import { createCompanyPreResearchJob } from "./company-pre-research-pipeline.js";
 import { publicRefresh } from "./evidence-refresh-service.js";
 import { buildFollowupMessages } from "./review-prompts.js";
+import { normalizeReviewReport } from "./report-summary-service.js";
 import { transitionReview } from "./review-state-machine.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
 
@@ -231,7 +232,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
 
   async function get(id, { ownerId } = {}) {
     const job = await requireOwnedJob(id, ownerId);
-    const report = job.reportAvailable ? await repository.getReport(id) : "";
+    const storedReport = job.reportAvailable ? await repository.getReport(id) : "";
+    const report = storedReport ? normalizeReviewReport(job, storedReport) : "";
     return { ...publicJob(job), report };
   }
 
@@ -243,7 +245,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
 
   async function ask(id, question, { onDelta, onStatus, onProgress, ownerId, signal } = {}) {
     const job = await requireOwnedJob(id, ownerId);
-    const report = await repository.getReport(id);
+    const report = normalizeReviewReport(job, await repository.getReport(id));
     if (!report) throw new Error("报告尚未生成完成");
     const text = String(question || "").trim();
     if (!text) throw new Error("问题不能为空");

@@ -1,5 +1,6 @@
 import { REPORT_SECTIONS } from "./review-prompts.js";
 import { hasEvidenceExcerpt, normalizeEvidenceSources } from "./research-evidence-service.js";
+import { buildBpConclusionSummary, ensureLeadingSummary } from "./report-summary-service.js";
 
 const OVERCLAIM_PATTERNS = [
   { code: "absence_as_fact", pattern: /(?:客户验证|经营收入|订单|收入)为零|无任何经营收入/g, message: "将未披露信息写成确认不存在" },
@@ -39,9 +40,16 @@ export function assessReportQuality(markdown, options = {}) {
   };
 }
 
-export function stabilizeReport(markdown, { companyName, sourceCount = 0 } = {}) {
+export function stabilizeReport(markdown, options = {}) {
+  const companyName = options.companyName;
+  const sourceCount = Number(options.sourceCount ?? options.sources?.length ?? 0);
   let result = String(markdown || "").trim();
   if (!result) result = `# ${companyName || "未命名公司"} BP 核查报告`;
+  result = ensureLeadingSummary(result, {
+    heading: "核查结论摘要",
+    aliases: ["内容核查结论摘要", "BP 核查结论摘要", "结论摘要"],
+    fallback: buildBpConclusionSummary(options)
+  });
   for (const section of REPORT_SECTIONS) {
     if (!result.includes(`## ${section}`)) {
       result += `\n\n## ${section}\n\n${fallbackSection(section, sourceCount)}`;

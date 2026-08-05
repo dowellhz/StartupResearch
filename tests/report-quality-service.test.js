@@ -8,6 +8,16 @@ test("stabilizeReport preserves visible output and supplies missing required sec
   for (const section of REPORT_SECTIONS) assert.equal(report.includes(`## ${section}`), true);
   assert.match(report, /联网检索|公开来源不足/);
   assert.match(report, /已有的重要分析/);
+  assert.match(report, /^# 示例公司 BP 核查\n\n## 核查结论摘要\n\n- \*\*总体判断\*\*/);
+});
+
+test("stabilizeReport derives its source count from supplied evidence", () => {
+  const report = stabilizeReport("# 示例公司 BP 核查", {
+    companyName: "示例公司",
+    sources: [{ url: "https://example.com" }]
+  });
+  assert.match(report, /纳入 1 个公开来源/);
+  assert.doesNotMatch(report, /> 核查限制：本次联网检索未形成可用公开来源/);
 });
 
 test("quality gate keeps a structurally complete but evidence-free report below completion threshold", () => {

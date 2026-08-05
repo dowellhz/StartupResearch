@@ -242,7 +242,10 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
   async function qualityGate(context) {
     const stabilized = stabilizeReport(context.report, {
       companyName: context.job.companyName,
-      sourceCount: context.sources.length
+      sources: context.sources,
+      analysis: context.analysis,
+      claimLedger: context.claimLedger,
+      investmentAnalysis: context.investmentAnalysis
     });
     const quality = assessReportQuality(stabilized, {
       sources: context.sources,

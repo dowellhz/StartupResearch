@@ -1,7 +1,15 @@
 import { COMPANY_RESEARCH_SECTIONS } from "./company-pre-research-prompts.js";
+import { buildCompanyResearchConclusionSummary, ensureLeadingSummary } from "./report-summary-service.js";
 
-export function stabilizeCompanyResearchReport(markdown, { companyName, sourceCount = 0 } = {}) {
+export function stabilizeCompanyResearchReport(markdown, options = {}) {
+  const companyName = options.companyName;
+  const sourceCount = Number(options.sourceCount ?? options.sources?.length ?? 0);
   let result = String(markdown || "").trim() || `# ${companyName || "未命名公司"} 公司预研报告`;
+  result = ensureLeadingSummary(result, {
+    heading: "预研结论摘要",
+    aliases: ["公司预研结论摘要", "结论摘要"],
+    fallback: buildCompanyResearchConclusionSummary(options)
+  });
   for (const section of COMPANY_RESEARCH_SECTIONS) {
     if (!result.includes(`## ${section}`)) result += `\n\n## ${section}\n\n${fallbackSection(section, sourceCount)}`;
   }

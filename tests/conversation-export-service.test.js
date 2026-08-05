@@ -20,6 +20,7 @@ test("conversation export includes the initial request, report, refresh and orde
   assert.equal(value.title, "示例科技 · 完整对话");
   assert.equal(value.request.attachment, null);
   assert.equal(value.reportLabel, "公司预研报告");
+  assert.match(value.report, /## 预研结论摘要/);
   assert.equal(value.evidenceRefresh.report, "# 公开资料刷新");
   assert.deepEqual(value.messages.map((item) => item.role), ["user", "assistant"]);
 });

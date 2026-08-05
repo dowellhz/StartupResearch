@@ -1,3 +1,5 @@
+import { normalizeReviewReport } from "./report-summary-service.js";
+
 export function buildConversationExport(review) {
   const taskType = review?.taskType === "company_pre_research" ? "company_pre_research" : "attachment_review";
   const companyName = String(review?.companyName || "未命名公司").trim();
@@ -20,7 +22,7 @@ export function buildConversationExport(review) {
       status: String(stage?.status || ""),
       message: String(stage?.message || "")
     })),
-    report: String(review?.report || ""),
+    report: normalizeReviewReport(review),
     reportLabel: taskType === "company_pre_research" ? "公司预研报告" : "BP 核查报告",
     quality: review?.quality || null,
     evidenceRefresh: review?.lastEvidenceRefresh?.report ? {
