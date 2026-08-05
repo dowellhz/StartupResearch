@@ -35,7 +35,10 @@ export function normalizeEvidenceSources(sources = []) {
       publishedAt: cleanText(raw.publishedAt || raw.pageAge || raw.date, 100),
       sourceTier: normalizeSourceTier(raw.sourceTier) || classifySourceTier(url),
       retrievedAt: cleanText(raw.retrievedAt, 100),
-      provider: cleanText(raw.provider, 100)
+      provider: cleanText(raw.provider, 100),
+      discoveredFrom: normalizeUrl(raw.discoveredFrom),
+      depth: normalizeDepth(raw.depth),
+      contentType: cleanText(raw.contentType, 120)
     };
     const existing = byUrl.get(url);
     byUrl.set(url, existing ? mergeSource(existing, next) : next);
@@ -133,7 +136,10 @@ function mergeSource(left, right) {
     publishedAt: left.publishedAt || right.publishedAt,
     sourceTier: strongerTier(left.sourceTier, right.sourceTier),
     retrievedAt: left.retrievedAt || right.retrievedAt,
-    provider: left.provider || right.provider
+    provider: left.provider || right.provider,
+    discoveredFrom: left.discoveredFrom || right.discoveredFrom,
+    depth: Math.max(left.depth || 0, right.depth || 0),
+    contentType: left.contentType || right.contentType
   };
 }
 
@@ -154,6 +160,11 @@ function normalizeUrl(value) {
 
 function normalizeSourceTier(value) {
   return ["primary", "secondary", "lead"].includes(value) ? value : "";
+}
+
+function normalizeDepth(value) {
+  const depth = Number(value);
+  return Number.isInteger(depth) && depth >= 0 && depth <= 2 ? depth : 0;
 }
 
 function strongerTier(left, right) {

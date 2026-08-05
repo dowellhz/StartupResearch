@@ -36,9 +36,9 @@ test("Google Scholar profile becomes a dedicated Scholar tool query", () => {
   assert.match(queries[0], /SLyWFgYAAAAJ/);
 });
 
-test("Agentic Search plans clinical, Crossref and OpenAlex tool calls", () => {
+test("Agentic Search plans clinical, arXiv, Crossref and OpenAlex tool calls", () => {
   const calls = planAgenticSearchToolCalls("核查 NCT04280705，并核对负责人 Google Scholar 学者主页");
-  assert.deepEqual(calls.map((call) => call.name), ["clinical_trials_search", "scholarly_works_search", "openalex_research_search"]);
+  assert.deepEqual(calls.map((call) => call.name), ["clinical_trials_search", "arxiv_paper_search", "scholarly_works_search", "openalex_research_search"]);
 });
 
 test("Agentic Search dispatches all planned academic tool calls", async () => {
@@ -60,9 +60,44 @@ test("Agentic Search dispatches all planned academic tool calls", async () => {
     queries: ["核查 NCT04280705 和负责人 Google Scholar 学者主页"],
     onToolCall: (tool) => calls.push(tool.name)
   });
-  assert.deepEqual(calls, ["clinical_trials_search", "scholarly_works_search", "openalex_research_search"]);
-  assert.equal(requestCount, 3);
-  assert.equal(sources.length, 3);
+  assert.deepEqual(calls, ["clinical_trials_search", "arxiv_paper_search", "scholarly_works_search", "openalex_research_search"]);
+  assert.equal(requestCount, 4);
+  assert.equal(sources.length, 4);
+});
+
+test("Agentic Search merges bounded linked-page evidence", async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ content: [{
+    type: "text",
+    text: JSON.stringify([{ title: "Company", url: "https://example.com", snippet: "Company overview" }])
+  }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  let expanded;
+  const linkedPageResearch = {
+    async expand(input) {
+      expanded = input;
+      return { sources: [{
+        title: "Team",
+        url: "https://example.com/team",
+        snippet: "Founder and research team",
+        depth: 1,
+        discoveredFrom: "https://example.com/"
+      }], fallbackQueries: [] };
+    }
+  };
+  const model = createDeepSeekModelService({
+    config: { apiKey: "test-key", baseUrl: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", timeoutMs: 1000 },
+    fetchImpl,
+    linkedPageResearch
+  });
+  const calls = [];
+  const sources = await model.webSearch({
+    companyName: "Example",
+    queries: ["Example company"],
+    requestedTools: ["general_web_search"],
+    onToolCall: (tool) => calls.push(tool.name)
+  });
+  assert.equal(expanded.sources.length, 1);
+  assert.ok(calls.includes("linked_page_research"));
+  assert.ok(sources.some((source) => source.url === "https://example.com/team" && source.depth === 1));
 });
 
 test("a failed structured tool is visible while successful search evidence is retained", async () => {

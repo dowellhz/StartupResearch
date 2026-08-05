@@ -2,8 +2,9 @@ import { anthropicMessagesUrl } from "../config/runtime-config.js";
 import { withRetry } from "../domain/retry.js";
 import { planStructuredResearchTools, researchToolDefinition, researchToolNames, STRUCTURED_RESEARCH_TOOLS } from "../domain/research-tool-catalog.js";
 import { buildSecWebFallbackQueries, SEC_WEB_FALLBACK_PROVIDER } from "../domain/research-tool-fallback.js";
+import { expandLinkedPageSearch } from "./linked-page-search-orchestrator.js";
 
-export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetch, researchTools = null } = {}) {
+export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetch, researchTools = null, linkedPageResearch = null } = {}) {
   if (!config) throw new Error("DeepSeek config is required");
 
   async function complete(messages, options = {}) {
@@ -155,7 +156,12 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
       }
     }
     if (!sources.length && failures.length) throw failures[0];
-    return uniqueSources(sources);
+    const firstPassSources = uniqueSources(sources, 24);
+    const expanded = await expandLinkedPageSearch({
+      linkedPageResearch, companyName, sources: firstPassSources, claims, queries, signal, onToolCall,
+      searchFallback: (searchQueries) => runAgenticSearch({ companyName, searchQueries, claims, signal })
+    });
+    return uniqueSources(expanded.sources, expanded.expanded ? 36 : 24);
   }
 
   async function planFollowupResearch({ companyName, report, history = [], question, signal } = {}) {
@@ -369,14 +375,14 @@ function extractTeamNames(value) {
   return Array.from(new Set(names));
 }
 
-function uniqueSources(sources) {
+function uniqueSources(sources, limit = 24) {
   const unique = new Map();
   for (const source of sources) {
     if (!source?.url) continue;
     const existing = unique.get(source.url);
     unique.set(source.url, existing ? mergeSearchSource(existing, source) : source);
   }
-  return Array.from(unique.values()).slice(0, 24);
+  return Array.from(unique.values()).slice(0, limit);
 }
 
 function normalizeResearchPlan(value, question) {

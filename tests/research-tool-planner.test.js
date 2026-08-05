@@ -7,7 +7,7 @@ test("biotech academic teams automatically use clinical and scholar research too
     companyProfile: { sector: "生物医药" },
     claims: [{ statement: "教授团队开发 siRNA 药物", verificationNeed: "核查论文和临床管线" }]
   });
-  assert.deepEqual(tools, ["general_web_search", "clinical_trials_search", "scholarly_works_search", "openalex_research_search"]);
+  assert.deepEqual(tools, ["general_web_search", "clinical_trials_search", "arxiv_paper_search", "scholarly_works_search", "openalex_research_search"]);
 });
 
 test("software and AI reviews use public repository and model asset tools", () => {
@@ -17,6 +17,7 @@ test("software and AI reviews use public repository and model asset tools", () =
   });
   assert.ok(tools.includes("github_repository_search"));
   assert.ok(tools.includes("huggingface_asset_search"));
+  assert.ok(tools.includes("arxiv_paper_search"));
 });
 
 test("security, US filing and EU procurement claims select their zero-key registries", () => {

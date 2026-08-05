@@ -1,4 +1,5 @@
 import { Result } from "../../domain/result.js";
+import { createArxivPaperSearchTool } from "./arxiv-paper-search-tool.js";
 import { createClinicalTrialsSearchTool } from "./clinical-trials-search-tool.js";
 import { createGitHubRepositorySearchTool, createHuggingFaceAssetSearchTool } from "./open-source-footprint-tools.js";
 import { createOpenAlexResearchTool } from "./openalex-research-tool.js";
@@ -12,6 +13,7 @@ export function createStructuredResearchToolService({ fetchImpl = globalThis.fet
   const http = createResearchToolHttpClient({ fetchImpl, timeoutMs, maxAttempts });
   const values = tools || [
     createClinicalTrialsSearchTool({ http }),
+    createArxivPaperSearchTool({ http }),
     createScholarlyWorksSearchTool({ http }),
     credentials.openAlexApiKey ? createOpenAlexResearchTool({ http, apiKey: credentials.openAlexApiKey }) : null,
     createGitHubRepositorySearchTool({ http }),

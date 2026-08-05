@@ -14,6 +14,21 @@ test("evidence sources merge duplicate URLs and preserve richer cited text", () 
   assert.equal(sources[0].provider, "ClinicalTrials.gov");
 });
 
+test("evidence sources retain linked-page provenance", () => {
+  const sources = normalizeEvidenceSources([{
+    title: "Team",
+    url: "https://example.com/team",
+    snippet: "Official team profile with public research experience.",
+    discoveredFrom: "https://example.com/",
+    depth: 1,
+    contentType: "text/html",
+    provider: "页面二级发现"
+  }]);
+  assert.equal(sources[0].depth, 1);
+  assert.equal(sources[0].discoveredFrom, "https://example.com/");
+  assert.equal(sources[0].contentType, "text/html");
+});
+
 test("evidence assessment reports claim coverage instead of counting URLs", () => {
   const assessment = buildEvidenceAssessment({
     claims: [{ id: "claim_1", importance: "critical", statement: "产品已进入二期临床试验" }],

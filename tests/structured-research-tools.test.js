@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createArxivPaperSearchTool, parseArxivAtom } from "../src/infra/research-tools/arxiv-paper-search-tool.js";
 import { createClinicalTrialsSearchTool } from "../src/infra/research-tools/clinical-trials-search-tool.js";
 import { createGitHubRepositorySearchTool, createHuggingFaceAssetSearchTool } from "../src/infra/research-tools/open-source-footprint-tools.js";
 import { createOpenAlexResearchTool } from "../src/infra/research-tools/openalex-research-tool.js";
@@ -42,6 +43,24 @@ test("Crossref tool returns DOI, authors and citation metadata", async () => {
   const sources = await createScholarlyWorksSearchTool({ http, maxQueries: 1 }).search({ companyName: "Example Lab" });
   assert.equal(sources[0].url, "https://doi.org/10.1000/example");
   assert.match(sources[0].snippet, /Ada Lovelace.*被引 12/);
+});
+
+test("arXiv tool returns zero-key Atom paper metadata and abstract evidence", async () => {
+  const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry>
+    <id>http://arxiv.org/abs/2608.01234v1</id><updated>2026-08-03T10:00:00Z</updated><published>2026-08-02T10:00:00Z</published>
+    <title> Efficient Edge AI </title><summary> A compact edge inference engine with measured results. </summary>
+    <author><name>Ada Lovelace</name></author><author><name>Alan Turing</name></author>
+    <category term="cs.AI"/><link title="pdf" href="https://arxiv.org/pdf/2608.01234v1" type="application/pdf"/>
+  </entry></feed>`;
+  let requestUrl;
+  const http = { async getText(url) { requestUrl = new URL(url); return atom; } };
+  const sources = await createArxivPaperSearchTool({ http, maxQueries: 1 }).search({ companyName: "Edge AI" });
+  assert.equal(requestUrl.hostname, "export.arxiv.org");
+  assert.match(requestUrl.searchParams.get("search_query"), /Edge AI/);
+  assert.equal(sources[0].url, "https://arxiv.org/abs/2608.01234v1");
+  assert.equal(sources[0].provider, "arXiv");
+  assert.match(sources[0].snippet, /Ada Lovelace.*cs\.AI.*compact edge inference/i);
+  assert.equal(parseArxivAtom(atom).length, 1);
 });
 
 test("OpenAlex tool uses its key and returns author and institution evidence", async () => {
@@ -159,10 +178,12 @@ test("structured research service registers OpenAlex only when its key is config
     credentials: { openAlexApiKey: "openalex-test-key" }
   });
   assert.equal(withoutKey.has("openalex_research_search"), false);
+  assert.equal(withoutKey.has("arxiv_paper_search"), true);
   assert.deepEqual(withoutKey.keyedStatus(), { openalex_research_search: false });
   assert.equal(withKey.has("openalex_research_search"), true);
   assert.deepEqual(withKey.keyedStatus(), { openalex_research_search: true });
   assert.equal(withKey.zeroKeyNames().includes("openalex_research_search"), false);
+  assert.equal(withKey.zeroKeyNames().includes("arxiv_paper_search"), true);
 });
 
 test("research tool HTTP client retries temporary failures without auth headers", async () => {
@@ -177,6 +198,9 @@ test("research tool HTTP client retries temporary failures without auth headers"
   assert.equal(requests.length, 2);
   assert.equal(requests[0].headers.Authorization, undefined);
   assert.match(requests[0].headers["User-Agent"], /VentureLens/);
+  const text = await createResearchToolHttpClient({ fetchImpl: async () => new Response("<feed />"), maxAttempts: 1, timeoutMs: 1000 })
+    .getText("https://example.com/feed");
+  assert.equal(text, "<feed />");
 });
 
 function fakeHttp({ get } = {}) {

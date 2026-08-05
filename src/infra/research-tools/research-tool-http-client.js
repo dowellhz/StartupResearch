@@ -8,7 +8,7 @@ export function createResearchToolHttpClient({
 } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("research tool fetch dependency is required");
 
-  async function requestJson(url, { method = "GET", body, headers = {}, signal } = {}) {
+  async function request(url, { method = "GET", body, headers = {}, signal, responseType = "json" } = {}) {
     return withRetry(async () => {
       const response = await fetchImpl(url, {
         method,
@@ -22,7 +22,7 @@ export function createResearchToolHttpClient({
         ...(body === undefined ? {} : { body: JSON.stringify(body) })
       });
       if (!response.ok) throw new ResearchToolHttpError(response.status, await safeResponseText(response));
-      return response.json();
+      return responseType === "text" ? response.text() : response.json();
     }, {
       maxAttempts,
       baseDelayMs: 250,
@@ -31,8 +31,9 @@ export function createResearchToolHttpClient({
   }
 
   return {
-    getJson: (url, options) => requestJson(url, options),
-    postJson: (url, body, options) => requestJson(url, { ...options, method: "POST", body })
+    getJson: (url, options) => request(url, options),
+    getText: (url, options) => request(url, { ...options, responseType: "text" }),
+    postJson: (url, body, options) => request(url, { ...options, method: "POST", body })
   };
 }
 

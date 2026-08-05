@@ -1,5 +1,6 @@
 const CLINICAL_PATTERN = /生物医药|制药|药物|抗体|小分子|siRNA|核酸|临床|适应症|IND|PCC|肿瘤|医疗器械|\bNCT\d{8}\b/i;
 const SCHOLAR_PATTERN = /教授|博士|院士|高校|大学|研究院|论文|学术|学者|科研|课题|实验室|DOI|ORCID|Google\s*Scholar/i;
+const ARXIV_PATTERN = /arXiv|预印本|论文|学术|科研|教授|博士|学者|高校|大学|研究院|实验室|Google\s*Scholar|算法|模型|人工智能|\bAI\b|机器学习|深度学习|神经网络|计算机视觉|自然语言|核心技术|技术架构/i;
 const SOFTWARE_PATTERN = /软件|SaaS|开源|代码|算法|开发者|GitHub|仓库|机器人|人工智能|\bAI\b|大模型|模型|数据集/i;
 const AI_ASSET_PATTERN = /人工智能|\bAI\b|大模型|基础模型|模型权重|数据集|Hugging\s*Face|transformer/i;
 const SECURITY_PATTERN = /漏洞|安全|依赖|供应链安全|CVE-\d{4}-\d+|\b(?:npm|pypi|maven|cargo):/i;
@@ -8,6 +9,7 @@ const TED_PATTERN = /TED|欧盟|欧洲|海外.{0,10}(?:招标|采购|中标)|国
 
 export const STRUCTURED_RESEARCH_TOOLS = Object.freeze([
   tool("clinical_trials_search", "ClinicalTrials.gov API", "检索官方临床试验登记、阶段、状态、申办方、入组和终点"),
+  tool("arxiv_paper_search", "arXiv 论文", "检索 arXiv 预印本的标题、作者、摘要、分类、发布日期和原文链接"),
   tool("scholarly_works_search", "Crossref 学术文献", "检索论文 DOI、作者、机构线索、期刊、引用与更新信息"),
   tool("openalex_research_search", "OpenAlex 学术图谱", "核验论文作者、研究机构、成果归属、引用和研究方向"),
   tool("github_repository_search", "GitHub 公开仓库", "检索公开代码仓库、技术栈、活跃度、版本与社区信号"),
@@ -21,6 +23,7 @@ export function planStructuredResearchTools(value = "") {
   const text = String(value || "");
   const names = [];
   if (CLINICAL_PATTERN.test(text)) names.push("clinical_trials_search");
+  if (ARXIV_PATTERN.test(text)) names.push("arxiv_paper_search");
   if (SCHOLAR_PATTERN.test(text)) names.push("scholarly_works_search");
   if (SCHOLAR_PATTERN.test(text)) names.push("openalex_research_search");
   if (SOFTWARE_PATTERN.test(text)) names.push("github_repository_search");
