@@ -15,7 +15,7 @@
     "deploy:remote": "./scripts/deploy-remote.sh"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=20.16.0 <21 || >=22.3.0"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "1.0.0",
