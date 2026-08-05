@@ -1,19 +1,21 @@
 import { createHash } from "node:crypto";
 import { createReviewJob } from "./bp-review-pipeline.js";
+import { createCompanyPreResearchJob } from "./company-pre-research-pipeline.js";
 import { publicRefresh } from "./evidence-refresh-service.js";
 import { buildFollowupMessages } from "./review-prompts.js";
 import { transitionReview } from "./review-state-machine.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
 
-export function createReviewManagerService({ pipeline, repository, model, evidenceRefreshService, now = () => new Date().toISOString() }) {
+export function createReviewManagerService({ pipeline, companyResearchPipeline, repository, model, evidenceRefreshService, now = () => new Date().toISOString() }) {
   const subscribers = new Map();
   const controllers = new Map();
   const refreshControllers = new Map();
   const deletedIds = new Set();
   const pendingCreates = new Map();
 
-  async function create({ companyName, instruction, upload }, { ownerId } = {}) {
+  async function create({ taskType = "attachment_review", companyName, instruction, upload }, { ownerId } = {}) {
     assertOwnerId(ownerId);
+    if (taskType === "company_pre_research") return createCompanyResearch({ companyName, instruction }, { ownerId });
     if (!upload?.data || !upload?.filename) throw new Error("请先上传商业计划书");
     const buffer = Buffer.from(upload.data, "base64");
     const uploadHash = createHash("sha256").update(buffer).digest("hex");
@@ -23,6 +25,35 @@ export function createReviewManagerService({ pipeline, repository, model, eviden
       .finally(() => pendingCreates.delete(createKey));
     pendingCreates.set(createKey, promise);
     return promise;
+  }
+
+  async function createCompanyResearch({ companyName, instruction }, { ownerId }) {
+    if (!companyResearchPipeline) throw new Error("公司预研服务未启用");
+    const name = String(companyName || "").replace(/\s+/g, " ").trim();
+    if (!name) throw new Error("公司预研需要填写公司名称");
+    const researchInstruction = normalizeInstruction(instruction) || "基于公开信息完成公司预研";
+    const createKey = `${ownerId}:company_pre_research:${name.toLowerCase()}:${researchInstruction}`;
+    if (pendingCreates.has(createKey)) return pendingCreates.get(createKey);
+    const promise = createCompanyResearchOnce({ companyName: name, instruction: researchInstruction }, { ownerId })
+      .finally(() => pendingCreates.delete(createKey));
+    pendingCreates.set(createKey, promise);
+    return promise;
+  }
+
+  async function createCompanyResearchOnce({ companyName, instruction }, { ownerId }) {
+    const activeDuplicate = (await repository.list?.({ ownerId, limit: 100 }) || []).find((job) =>
+      job.taskType === "company_pre_research"
+      && ["queued", "running"].includes(job.status)
+      && normalizeComparable(job.companyName) === normalizeComparable(companyName)
+      && normalizeInstruction(job.instruction) === normalizeInstruction(instruction));
+    if (activeDuplicate) return publicJob(activeDuplicate);
+    const job = {
+      ...createCompanyPreResearchJob({ companyName, instruction, steps: companyResearchPipeline.steps, now }),
+      ownerId
+    };
+    await repository.save(job);
+    queueMicrotask(() => run(job.id).catch(() => {}));
+    return publicJob(job);
   }
 
   async function createOnce({ companyName, instruction, upload, buffer, uploadHash }, { ownerId }) {
@@ -48,8 +79,9 @@ export function createReviewManagerService({ pipeline, repository, model, eviden
     const existing = await requireOwnedJob(id, ownerId);
     assertNoEvidenceRefresh(existing);
     if (!new Set(["failed", "needs_attention"]).has(existing.status)) throw new Error("只有失败或需关注的任务可以重试");
+    const selectedPipeline = pipelineFor(existing);
     const restartKey = recoverableRestartKey(existing);
-    const resumed = resetPipelineFrom(transitionReview(existing, "running"), pipeline.steps, restartKey);
+    const resumed = resetPipelineFrom(transitionReview(existing, "running"), selectedPipeline.steps, restartKey);
     const saved = await repository.save({ ...resumed, error: "", failedStep: "" });
     queueMicrotask(() => run(id).catch(() => {}));
     return publicJob(saved);
@@ -59,14 +91,17 @@ export function createReviewManagerService({ pipeline, repository, model, eviden
     const existing = await requireOwnedJob(id, ownerId);
     assertNoEvidenceRefresh(existing);
     if (existing.status === "running") throw new Error("任务正在运行，无需重复提交");
-    const upload = await repository.getUpload?.(id, existing.upload?.storagePath);
-    if (!upload?.length) throw new Error("原始 BP 未保存，请重新上传文件发起核查");
+    const selectedPipeline = pipelineFor(existing);
+    if (taskTypeOf(existing) === "attachment_review") {
+      const upload = await repository.getUpload?.(id, existing.upload?.storagePath);
+      if (!upload?.length) throw new Error("原始 BP 未保存，请重新上传文件发起核查");
+    }
     const archivedReport = await repository.archiveReport?.(id);
     const resumed = transitionReview(existing, "running");
     const job = await repository.save({
       ...resumed,
       checkpoints: {},
-      stages: pipeline.steps.map((step) => ({ ...step, status: "pending" })),
+      stages: selectedPipeline.steps.map((step) => ({ ...step, status: "pending" })),
       error: "",
       failedStep: "",
       reanalysisInProgress: true,
@@ -79,6 +114,7 @@ export function createReviewManagerService({ pipeline, repository, model, eviden
 
   async function replaceBp(id, { instruction, upload }, { ownerId } = {}) {
     const existing = await requireOwnedJob(id, ownerId);
+    if (taskTypeOf(existing) !== "attachment_review") throw new Error("公司预研对话不支持替换 BP，请新建附件核查");
     assertNoEvidenceRefresh(existing);
     if (existing.status === "running") throw new Error("任务正在运行，请完成后再上传新版 BP");
     if (!upload?.data || !upload?.filename) throw new Error("请上传新版商业计划书");
@@ -130,7 +166,7 @@ export function createReviewManagerService({ pipeline, repository, model, eviden
     controllers.set(id, controller);
     publish(id, { type: "snapshot", data: publicJob(job), at: now() });
     try {
-      const result = await pipeline.execute(job, {
+      const result = await pipelineFor(job).execute(job, {
         signal: controller.signal,
         onEvent: (event) => publish(id, event)
       });
@@ -159,7 +195,7 @@ export function createReviewManagerService({ pipeline, repository, model, eviden
     if (!evidenceRefreshService) throw new Error("公开资料刷新服务未启用");
     const existing = await requireOwnedJob(id, ownerId);
     if (!["completed", "needs_attention"].includes(existing.status) || !existing.reportAvailable) {
-      throw new Error("请等待 BP 核查报告完成后再刷新公开资料");
+      throw new Error(taskTypeOf(existing) === "company_pre_research" ? "请等待公司预研报告完成后再刷新公开资料" : "请等待 BP 核查报告完成后再刷新公开资料");
     }
     assertNoEvidenceRefresh(existing);
     const evidenceRefresh = evidenceRefreshService.createRefresh();
@@ -249,6 +285,7 @@ export function createReviewManagerService({ pipeline, repository, model, eviden
     onProgress?.(followupProgress("answer-generation", "生成回答", "running", "正在结合报告与检索结果组织回答"));
     const answer = redactSensitiveText(await model.stream(buildFollowupMessages({
       companyName: job.companyName,
+      taskType: taskTypeOf(job),
       report,
       history,
       question: text,
@@ -278,6 +315,14 @@ export function createReviewManagerService({ pipeline, repository, model, eviden
 
   function publish(id, event) {
     for (const listener of subscribers.get(id) || []) listener(event);
+  }
+
+  function pipelineFor(job) {
+    if (taskTypeOf(job) === "company_pre_research") {
+      if (!companyResearchPipeline) throw new Error("公司预研服务未启用");
+      return companyResearchPipeline;
+    }
+    return pipeline;
   }
 
   async function requireJob(id) {
@@ -319,6 +364,7 @@ function publicJob(job) {
   const { upload, checkpoints, ownerId, previousReportArchive, previousAnalysisSnapshot, analysis, evidenceRefresh, ...safe } = job;
   return {
     ...safe,
+    taskType: taskTypeOf(job),
     upload: upload ? { filename: upload.filename, mimeType: upload.mimeType, size: upload.size } : null,
     checkpointCount: Object.keys(checkpoints || {}).length,
     evidenceRefresh: publicRefresh(evidenceRefresh)
@@ -364,7 +410,7 @@ function array(value) {
 }
 
 function recoverableRestartKey(job) {
-  if (job.extractionWarning) return "claim-extraction";
+  if (job.extractionWarning) return taskTypeOf(job) === "company_pre_research" ? "fact-extraction" : "claim-extraction";
   if (job.investmentAnalysisWarning) return "investment-analysis";
   if (job.generationWarning) return "report-generation";
   return "";
@@ -379,9 +425,9 @@ function resetPipelineFrom(job, steps, restartKey) {
     ...job,
     checkpoints: Object.fromEntries(Object.entries(job.checkpoints || {}).filter(([key]) => !resetKeys.has(key))),
     stages: array(job.stages).map((stage) => resetKeys.has(stage.key) ? { ...stage, status: "pending", message: "" } : stage),
-    extractionWarning: restartKey === "claim-extraction" ? "" : job.extractionWarning,
+    extractionWarning: ["claim-extraction", "fact-extraction"].includes(restartKey) ? "" : job.extractionWarning,
     investmentAnalysisWarning: ["claim-extraction", "investment-analysis"].includes(restartKey) ? "" : job.investmentAnalysisWarning,
-    generationWarning: ["claim-extraction", "investment-analysis", "report-generation"].includes(restartKey) ? "" : job.generationWarning
+    generationWarning: ["claim-extraction", "fact-extraction", "investment-analysis", "report-generation"].includes(restartKey) ? "" : job.generationWarning
   };
 }
 
@@ -395,4 +441,12 @@ function assertOwnerId(ownerId) {
 
 function normalizeInstruction(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeComparable(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]+/g, "");
+}
+
+function taskTypeOf(job) {
+  return job?.taskType === "company_pre_research" ? "company_pre_research" : "attachment_review";
 }

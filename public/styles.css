@@ -181,6 +181,15 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .attach-button, .send-button { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; flex: 0 0 auto; cursor: pointer; }
 .attach-button { border: 0; background: transparent; color: #69655e; }
 .attach-button:hover { background: #f1eee8; }
+.attach-button[aria-expanded="true"] { background: #ede9e2; color: var(--accent-dark); transform: rotate(45deg); }
+.add-menu { position: absolute; left: 8px; bottom: calc(100% + 10px); z-index: 10; width: 292px; padding: 7px; border: 1px solid #d8d2c8; border-radius: 14px; background: var(--paper-strong); box-shadow: 0 16px 44px rgba(43,39,32,.18); }
+.add-menu button { width: 100%; border: 0; border-radius: 10px; background: transparent; padding: 10px; display: flex; align-items: center; gap: 11px; color: var(--ink); text-align: left; cursor: pointer; }
+.add-menu button:hover, .add-menu button:focus-visible { outline: 0; background: #f2eee8; }
+.add-menu button > span:last-child { min-width: 0; }
+.add-menu strong, .add-menu small { display: block; }
+.add-menu strong { font-size: 13px; margin-bottom: 3px; }
+.add-menu small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.add-menu-icon { width: 33px; height: 33px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; background: #f0dfd8; color: var(--accent-dark); font-size: 11px; font-weight: 800; }
 .send-button { border: 0; background: var(--ink); color: #fff; }
 .send-button:hover { background: var(--accent-dark); }
 .send-button:disabled { background: #bbb6ae; cursor: wait; }
@@ -190,6 +199,12 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .inputs textarea { font-size: 14px; max-height: 120px; line-height: 1.5; }
 .inputs input::placeholder, .inputs textarea::placeholder { color: #aaa69f; }
 .file-preview { width: min(820px, 100%); margin: 0 auto 7px; background: var(--paper-strong); border: 1px solid #ddd8cf; border-radius: 11px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; box-shadow: 0 5px 18px rgba(46,42,34,.06); }
+.research-preview { width: min(820px, 100%); margin: 0 auto 7px; background: #fff8f4; border: 1px solid #d7b3a8; border-radius: 11px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; box-shadow: 0 5px 18px rgba(46,42,34,.06); }
+.research-icon { width: 31px; height: 35px; border-radius: 6px; display: grid; place-items: center; background: #f1dfd8; color: var(--accent-dark); font-size: 11px; font-weight: 800; }
+.research-preview strong { display: block; font-size: 13px; }
+.research-preview span { color: var(--muted); font-size: 11px; }
+.research-preview button { margin-left: auto; border: 0; background: transparent; color: #99948b; font-size: 18px; cursor: pointer; }
+.research-inline b { background: #f1dfd8; }
 .file-icon { width: 31px; height: 35px; border-radius: 6px; display: grid; place-items: center; background: #f1dfd8; color: var(--accent-dark); font-size: 9px; font-weight: 800; }
 .file-preview.is-analyzing { border-color: #d2aa9e; box-shadow: 0 5px 18px rgba(154,67,45,.1); }
 .file-preview.is-analyzing .file-icon { font-size: 0; background: #f7ebe6; }

@@ -332,6 +332,7 @@ export function createReviewJob({ companyName, instruction, upload, steps, now =
   const createdAt = now();
   return {
     id: `bp_${randomUUID().replace(/-/g, "").slice(0, 20)}`,
+    taskType: "attachment_review",
     companyName: String(companyName || "").trim(),
     title: `${String(companyName || "").trim() || "正在识别公司"} BP 核查`,
     instruction: String(instruction || "").trim(),

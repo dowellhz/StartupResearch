@@ -61,16 +61,29 @@
           <div><strong id="fileName"></strong><span id="fileMeta"></span></div>
           <button id="removeFile" aria-label="移除文件">×</button>
         </div>
+        <div class="research-preview hidden" id="researchPreview">
+          <div class="research-icon">研</div>
+          <div><strong>公司预研</strong><span>无需附件，将抓取公司公开信息</span></div>
+          <button id="exitResearchMode" type="button" aria-label="退出公司预研">×</button>
+        </div>
         <form class="composer" id="composer">
           <input id="fileInput" type="file" accept=".pdf,.pptx,.docx,.txt,.md,application/pdf" hidden>
-          <button class="attach-button" id="attachButton" type="button" aria-label="上传 BP"><svg viewBox="0 0 24 24"><path d="m20.5 11.5-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.7 9.7a2 2 0 0 1-2.8-2.8l8.9-8.9"/></svg></button>
+          <button class="attach-button" id="attachButton" type="button" aria-label="添加内容" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          <div class="add-menu hidden" id="addMenu" role="menu">
+            <button id="attachmentOption" type="button" role="menuitem">
+              <span class="add-menu-icon">附</span><span><strong>增加附件</strong><small>待核实的 BP 或其他会议材料</small></span>
+            </button>
+            <button id="companyResearchOption" type="button" role="menuitem">
+              <span class="add-menu-icon">研</span><span><strong>公司预研</strong><small>无需附件，抓取公司公开信息</small></span>
+            </button>
+          </div>
           <div class="inputs">
             <input id="companyInput" placeholder="公司名称（可选，可从 BP 识别）" autocomplete="off">
             <textarea id="promptInput" rows="1" placeholder="补充核查要求，或在报告完成后继续追问…"></textarea>
           </div>
           <button class="send-button" id="sendButton" type="submit" aria-label="开始核查"><svg viewBox="0 0 24 24"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg></button>
         </form>
-        <p class="composer-note">点击回形针或把 BP 拖入输入框 · AI 结论仅供投资研究参考</p>
+        <p class="composer-note" id="composerNote">点击 + 添加附件或发起公司预研，也可把材料拖入输入框 · AI 结论仅供投资研究参考</p>
       </footer>
     </main>
   </div>

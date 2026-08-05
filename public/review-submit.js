@@ -1,5 +1,5 @@
 export function submitUploadedBp({ requestJson, currentId, currentReview, companyName, instruction, file, data }) {
-  const shouldMatch = Boolean(currentId && currentReview?.reportAvailable);
+  const shouldMatch = Boolean(currentId && currentReview?.reportAvailable && currentReview.taskType !== "company_pre_research");
   const url = shouldMatch ? `/api/reviews/${currentId}/company-match` : "/api/reviews";
   return requestJson(url, {
     method: "POST",
@@ -10,6 +10,23 @@ export function submitUploadedBp({ requestJson, currentId, currentReview, compan
       instruction,
       file: { filename: file.name, mimeType: file.type, size: file.size, data }
     })
+  });
+}
+
+export function submitCompanyPreResearch({ requestJson, companyName, instruction }) {
+  return requestJson("/api/reviews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ taskType: "company_pre_research", companyName, instruction })
+  });
+}
+
+export function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(new Error("读取文件失败"));
+    reader.readAsDataURL(file);
   });
 }
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnvFile, getRuntimeConfig } from "./src/config/runtime-config.js";
 import { createBpReviewPipeline } from "./src/domain/bp-review-pipeline.js";
+import { createCompanyPreResearchPipeline } from "./src/domain/company-pre-research-pipeline.js";
 import { createCompanyIdentityService } from "./src/domain/company-identity-service.js";
 import { createEvidenceRefreshService } from "./src/domain/evidence-refresh-service.js";
 import { createInvestmentAnalysisService } from "./src/domain/investment-analysis-service.js";
@@ -30,7 +31,8 @@ const investmentAnalysis = createInvestmentAnalysisService({ model });
 const evidenceRefresh = createEvidenceRefreshService({ model, repository });
 const pdf = createPdfReportService();
 const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService: pdf, investmentAnalysisService: investmentAnalysis, webResearchEnabled: config.webResearchEnabled });
-const manager = createReviewManagerService({ pipeline, repository, model, evidenceRefreshService: evidenceRefresh });
+const companyResearchPipeline = createCompanyPreResearchPipeline({ model, repository, pdfReportService: pdf, webResearchEnabled: config.webResearchEnabled });
+const manager = createReviewManagerService({ pipeline, companyResearchPipeline, repository, model, evidenceRefreshService: evidenceRefresh });
 const browserSessions = createBrowserSessionService();
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
 
@@ -61,16 +63,18 @@ async function route(req, res) {
   }
   if (req.method === "POST" && url.pathname === "/api/reviews") {
     const body = await readJson(req, config.maxUploadBytes * 1.42 + 1024 * 1024);
-    validateUploadBody(body);
-    const review = await manager.create({
+    const taskType = body.taskType === "company_pre_research" ? "company_pre_research" : "attachment_review";
+    if (taskType === "attachment_review") validateUploadBody(body);
+    else validateCompanyResearchBody(body);
+    const review = await manager.create(taskType === "company_pre_research" ? {
+      taskType,
+      companyName: body.companyName,
+      instruction: body.instruction
+    } : {
+      taskType,
       companyName: body.companyName,
       instruction: body.instruction,
-      upload: {
-        filename: sanitizeVisibleFilename(body.file.filename),
-        mimeType: String(body.file.mimeType || "application/octet-stream"),
-        size: Number(body.file.size || 0),
-        data: String(body.file.data || "")
-      }
+      upload: normalizeUpload(body.file)
     }, { ownerId: browserSession.id });
     return json(res, 202, { ok: true, review });
   }
@@ -158,12 +162,12 @@ async function downloadPdf(res, id, ownerId) {
   if (!review.report) throw Object.assign(new Error("报告尚未生成"), { statusCode: 409 });
   let buffer = await repository.getPdf(id, review.pdfStoragePath);
   if (!buffer) {
-    buffer = await pdf.render({ title: `${review.companyName || "未命名公司"} BP 核查报告`, markdown: review.report });
+    buffer = await pdf.render({ title: reportTitle(review), markdown: review.report });
     const pdfStoragePath = await repository.savePdf(id, buffer, { date: review.createdAt || review.completedAt });
     const job = await repository.get(id);
     if (job) await repository.save({ ...job, pdfStoragePath });
   }
-  const filename = encodeURIComponent(`${safeFilename(review.companyName || "BP")}-核查报告.pdf`);
+  const filename = encodeURIComponent(`${safeFilename(review.companyName || "BP")}-${review.taskType === "company_pre_research" ? "公司预研报告" : "核查报告"}.pdf`);
   res.writeHead(200, {
     "Content-Type": "application/pdf",
     "Content-Length": buffer.length,
@@ -212,6 +216,10 @@ function validateUploadBody(body) {
   if (!body.file?.data || !body.file?.filename) throw Object.assign(new Error("请上传 BP 文件"), { statusCode: 400 });
 }
 
+function validateCompanyResearchBody(body) {
+  if (!String(body.companyName || "").trim()) throw Object.assign(new Error("公司预研需要填写公司名称"), { statusCode: 400 });
+}
+
 function normalizeUpload(file) {
   return {
     filename: sanitizeVisibleFilename(file.filename),
@@ -253,7 +261,11 @@ async function ensureStoredPdf(job) {
   if (await repository.getPdf(job.id, job.pdfStoragePath)) return;
   const markdown = await repository.getReport(job.id);
   if (!markdown) return;
-  const buffer = await pdf.render({ title: `${job.companyName || "未命名公司"} BP 核查报告`, markdown });
+  const buffer = await pdf.render({ title: reportTitle(job), markdown });
   const pdfStoragePath = await repository.savePdf(job.id, buffer, { date: job.createdAt || job.completedAt });
   await repository.save({ ...job, pdfStoragePath });
+}
+
+function reportTitle(review) {
+  return `${review.companyName || "未命名公司"} ${review.taskType === "company_pre_research" ? "公司预研报告" : "BP 核查报告"}`;
 }

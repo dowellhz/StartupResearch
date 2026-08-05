@@ -1,5 +1,6 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
 import { createComposerDraftController, lastUserInput } from "./composer-draft.js";
+import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, createComposerTaskModeController } from "./composer-task-mode.js";
 import { bindFileDrop } from "./file-drop.js";
 import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evidence-refresh-ui.js";
 import { renderFollowupSuggestions } from "./followup-suggestions.js";
@@ -7,17 +8,22 @@ import { renderHistoryList } from "./history-list.js";
 import { requestJson, requestResponse } from "./http-client.js";
 import { applyDetectedCompany } from "./review-identity.js";
 import { applyRecoverableReport } from "./review-error.js";
-import { applyUploadRouting, submitUploadedBp } from "./review-submit.js";
+import { applyUploadRouting, fileToBase64, submitCompanyPreResearch, submitUploadedBp } from "./review-submit.js";
+import { formatBytes, renderReviewRequest, stageStatusCopy } from "./review-request-message.js";
 import { enterUploadedBpCompanyContext, restoreCurrentCompanyContext, setUploadAnalysisState } from "./upload-company-context.js";
 import { sanitizeVisibleFilename } from "./privacy-redaction.js";
 import { renderQualitySummary } from "./quality-summary.js";
 import { runFollowup } from "./followup-controller.js";
 import { renderStreamingMarkdown, STREAM_RENDER_INTERVAL } from "./streaming-markdown.js";
 const elements = {
+  addMenu: document.querySelector("#addMenu"),
   attachButton: document.querySelector("#attachButton"),
+  attachmentOption: document.querySelector("#attachmentOption"),
   closeHelp: document.querySelector("#closeHelp"),
   companyInput: document.querySelector("#companyInput"),
+  companyResearchOption: document.querySelector("#companyResearchOption"),
   composer: document.querySelector("#composer"),
+  composerNote: document.querySelector("#composerNote"),
   conversation: document.querySelector("#conversation"),
   conversationTitle: document.querySelector("#conversationTitle"),
   emptyState: document.querySelector("#emptyState"),
@@ -25,6 +31,7 @@ const elements = {
   fileMeta: document.querySelector("#fileMeta"),
   fileName: document.querySelector("#fileName"),
   filePreview: document.querySelector("#filePreview"),
+  exitResearchMode: document.querySelector("#exitResearchMode"),
   helpButton: document.querySelector("#helpButton"),
   helpDialog: document.querySelector("#helpDialog"),
   historyList: document.querySelector("#historyList"),
@@ -35,6 +42,7 @@ const elements = {
   newReviewButton: document.querySelector("#newReviewButton"),
   promptInput: document.querySelector("#promptInput"),
   removeFile: document.querySelector("#removeFile"),
+  researchPreview: document.querySelector("#researchPreview"),
   sendButton: document.querySelector("#sendButton"),
   sidebar: document.querySelector("#sidebar"),
   toastRegion: document.querySelector("#toastRegion")
@@ -52,8 +60,10 @@ const state = {
   report: "",
   reportRenderTimer: null,
   stages: [],
-  autoFollow: true
+  autoFollow: true,
+  taskType: ATTACHMENT_REVIEW
 };
+const taskMode = createComposerTaskModeController({ elements, state, clearAttachment: clearFile });
 const evidenceRefreshController = createEvidenceRefreshController({ state, container: elements.messageStream, requestJson,
   connectEvents, notify: toast, scrollBottom, refreshHistory: loadHistory });
 boot();
@@ -64,7 +74,7 @@ async function boot() {
   await Promise.all([checkHealth(), loadHistory()]);
 }
 function bindEvents() {
-  elements.attachButton.addEventListener("click", () => elements.fileInput.click());
+  taskMode.bind();
   elements.fileInput.addEventListener("change", () => selectFile(elements.fileInput.files[0]));
   bindFileDrop({ dropZone: elements.composer, onFile: selectFile, onMultiple: () => toast("一次只能上传一份 BP，已选择第一个文件") });
   elements.removeFile.addEventListener("click", clearFile);
@@ -123,8 +133,10 @@ function selectFile(file) {
   const extension = file.name.split(".").pop().toLowerCase();
   if (!allowed.includes(extension)) return toast("请上传 PDF、PPTX、DOCX、TXT 或 Markdown");
   if (file.size > 20 * 1024 * 1024) return toast("文件不能超过 20 MB");
+  taskMode.selectAttachmentMode();
   state.file = file;
-  const matchingRequired = enterUploadedBpCompanyContext(elements.companyInput, state.currentReview);
+  const attachmentReview = state.currentReview?.taskType === COMPANY_PRE_RESEARCH ? null : state.currentReview;
+  const matchingRequired = enterUploadedBpCompanyContext(elements.companyInput, attachmentReview);
   elements.fileName.textContent = sanitizeVisibleFilename(file.name);
   elements.fileMeta.textContent = `${formatBytes(file.size)} · ${matchingRequired ? "提交后识别公司并判断是否新建对话" : "等待核查"}`;
   elements.filePreview.classList.remove("hidden");
@@ -141,6 +153,7 @@ function clearFile() {
 async function submitComposer(event) {
   event.preventDefault();
   const prompt = elements.promptInput.value.trim();
+  if (state.taskType === COMPANY_PRE_RESEARCH) return startCompanyPreResearch(prompt);
   if (state.currentReview?.reportAvailable && !state.file) return askFollowup(prompt);
   if (!state.file) return toast("请先上传商业计划书");
   const companyName = elements.companyInput.value.trim();
@@ -166,7 +179,7 @@ async function submitComposer(event) {
     elements.companyInput.value = payload.review.companyName || payload.decision?.newCompanyName || "";
     elements.companyInput.disabled = false;
     showConversation();
-    renderUserMessage(payload.review.companyName || payload.decision?.newCompanyName || companyName, prompt || "全面核查这份 BP", file);
+    renderReviewRequest(elements.messageStream, { company: payload.review.companyName || payload.decision?.newCompanyName || companyName, prompt: prompt || "全面核查这份材料", file, taskType: ATTACHMENT_REVIEW });
     draft.clearCompany();
     draft.clearPrompt();
     renderProgressPanel();
@@ -179,6 +192,32 @@ async function submitComposer(event) {
     toast(error.message);
   } finally {
     if (state.file) setUploadAnalysisState(elements, { active: false });
+    setBusy(false);
+  }
+}
+
+async function startCompanyPreResearch(prompt) {
+  const companyName = elements.companyInput.value.trim();
+  if (!companyName) return toast("公司预研需要填写公司名称");
+  setBusy(true);
+  try {
+    const instruction = prompt || "基于公开信息完成公司预研";
+    const payload = await submitCompanyPreResearch({ requestJson, companyName, instruction });
+    Object.assign(state, { currentId: payload.review.id, currentReview: payload.review, stages: payload.review.stages || [], report: "" });
+    showConversation();
+    elements.messageStream.innerHTML = "";
+    renderReviewRequest(elements.messageStream, { company: companyName, prompt: instruction, taskType: COMPANY_PRE_RESEARCH });
+    renderProgressPanel();
+    elements.conversationTitle.textContent = payload.review.title;
+    draft.clear();
+    elements.companyInput.value = companyName;
+    elements.promptInput.value = "";
+    taskMode.selectAttachmentMode();
+    connectEvents(state.currentId);
+    await loadHistory();
+  } catch (error) {
+    toast(error.message);
+  } finally {
     setBusy(false);
   }
 }
@@ -261,7 +300,7 @@ async function loadReview(id) {
     state.report = review.report || "";
     showConversation();
     elements.messageStream.innerHTML = "";
-    renderUserMessage(review.companyName, review.instruction, review.upload);
+    renderReviewRequest(elements.messageStream, { company: review.companyName, prompt: review.instruction, file: review.upload, taskType: review.taskType });
     renderProgressPanel();
     if (review.report && review.reanalysisInProgress) showPreviousReportDuringReanalysis(review);
     else if (review.report) completeReport({ report: review.report, quality: review.quality, status: review.status, sources: review.sources, followupSuggestions: review.followupSuggestions });
@@ -299,25 +338,13 @@ function showConversation() {
   elements.messageStream.classList.remove("hidden");
 }
 
-function renderUserMessage(company, prompt, file) {
-  const name = sanitizeVisibleFilename(file?.name || file?.filename || "BP 文件");
-  const size = file?.size ? ` · ${formatBytes(file.size)}` : "";
-  elements.messageStream.insertAdjacentHTML("beforeend", `
-    <article class="message user">
-      <div class="message-meta"><span class="avatar">你</span>你的请求</div>
-      <div class="message-body"><strong class="request-company">${escapeHtml(company || "由 BP 自动识别公司")}</strong><br>${escapeHtml(prompt)}
-        <div class="file-inline"><b>BP</b><span>${escapeHtml(name)}${size}</span></div>
-      </div>
-    </article>`);
-}
-
 function renderProgressPanel() {
   let panel = document.querySelector("#progressMessage");
   if (!panel) {
     elements.messageStream.insertAdjacentHTML("beforeend", `
       <article class="message assistant" id="progressMessage">
         <div class="message-meta"><span class="avatar">VL</span>研究代理</div>
-        <div class="assistant-card"><div class="progress-panel"><div class="progress-header"><strong>BP 核查进行中</strong><span class="progress-badge">LIVE</span></div><div class="stage-list"></div></div></div>
+        <div class="assistant-card"><div class="progress-panel"><div class="progress-header"><strong>研究进行中</strong><span class="progress-badge">LIVE</span></div><div class="stage-list"></div></div></div>
       </article>`);
     panel = document.querySelector("#progressMessage");
   }
@@ -328,7 +355,8 @@ function renderProgressPanel() {
       <div><strong>${escapeHtml(stage.label)}</strong><p>${escapeHtml(stage.message || stageStatusCopy(stage.status))}</p></div>
       <span class="stage-time">${stage.status === "running" ? "处理中" : ["completed", "restored"].includes(stage.status) ? "完成" : ""}</span>
     </div>`).join("");
-  panel.querySelector(".progress-header strong").textContent = state.currentReview?.reportAvailable ? "BP 核查已完成" : "BP 核查进行中";
+  const taskLabel = state.currentReview?.taskType === COMPANY_PRE_RESEARCH ? "公司预研" : "附件核查";
+  panel.querySelector(".progress-header strong").textContent = `${taskLabel}${state.currentReview?.reportAvailable ? "已完成" : "进行中"}`;
   panel.querySelector(".progress-badge").textContent = state.currentReview?.reportAvailable ? "DONE" : "LIVE";
   scrollBottom();
 }
@@ -356,6 +384,10 @@ function ensureReportCard(streaming) {
     card.querySelector("[data-refresh-evidence]").addEventListener("click", evidenceRefreshController.start);
     card.querySelector("[data-reanalyze]").addEventListener("click", reanalyzeCurrentReview);
   }
+  const isResearch = state.currentReview?.taskType === COMPANY_PRE_RESEARCH;
+  card.querySelector(".report-toolbar > div > span").textContent = isResearch ? "COMPANY RESEARCH REPORT" : "BP REVIEW REPORT";
+  card.querySelector(".report-toolbar strong").textContent = isResearch ? "公司预研结果" : "核查结果";
+  card.querySelector("[data-reanalyze]").textContent = isResearch ? "重新预研" : "重新核查";
   card.querySelector(".report-content").classList.toggle("stream-cursor", streaming);
   card.querySelector(".report-footer").classList.toggle("hidden", streaming);
   if (streaming) card.querySelector("#followupSuggestions")?.classList.add("hidden");
@@ -410,6 +442,7 @@ function resetWorkspace() {
   elements.promptInput.value = "";
   elements.promptInput.placeholder = "补充核查要求，或在报告完成后继续追问…";
   clearFile();
+  taskMode.selectAttachmentMode();
   draft.clear();
   loadHistory();
   elements.sidebar.classList.remove("open");
@@ -420,7 +453,9 @@ function downloadCurrentPdf() {
 }
 
 async function reanalyzeCurrentReview() {
-  if (!state.currentId || !window.confirm("将使用已保存的原始 BP 重新解析并核查。旧报告会先归档，是否继续？")) return;
+  const isResearch = state.currentReview?.taskType === COMPANY_PRE_RESEARCH;
+  const confirmMessage = isResearch ? "将重新抓取公开信息并生成公司预研报告。旧报告会先归档，是否继续？" : "将使用已保存的原始 BP 重新解析并核查。旧报告会先归档，是否继续？";
+  if (!state.currentId || !window.confirm(confirmMessage)) return;
   try {
     const payload = await requestJson(`/api/reviews/${state.currentId}/reanalyze`, { method: "POST" });
     state.currentReview = payload.review;
@@ -429,7 +464,7 @@ async function reanalyzeCurrentReview() {
     document.querySelector("[data-reanalyze]")?.setAttribute("disabled", "");
     renderProgressPanel();
     connectEvents(state.currentId);
-    toast("已开始增强解析，旧报告已归档");
+    toast(isResearch ? "已开始重新抓取公开信息，旧报告已归档" : "已开始增强解析，旧报告已归档");
   } catch (error) {
     toast(error.message);
   }
@@ -460,24 +495,4 @@ function toast(message) {
   item.textContent = message;
   elements.toastRegion.append(item);
   setTimeout(() => item.remove(), 3800);
-}
-
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
-    reader.onerror = () => reject(new Error("读取文件失败"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function formatBytes(value) {
-  const bytes = Number(value || 0);
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function stageStatusCopy(status) {
-  return ({ pending: "等待前序步骤", running: "正在处理", completed: "已完成", restored: "已恢复", failed: "执行失败" })[status] || "";
 }
