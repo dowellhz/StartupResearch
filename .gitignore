@@ -1,0 +1,13 @@
+node_modules/
+.env
+data/jobs/*.json
+data/reports/*
+data/uploads/*
+data/pdfs/
+data/deleted-conversations/
+tmp/
+!data/jobs/.gitkeep
+!data/reports/.gitkeep
+!data/uploads/.gitkeep
+.DS_Store
+npm-debug.log*

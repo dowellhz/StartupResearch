@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f6f4ef">
+  <title>VentureLens · BP 核查</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-row">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 36 36"><path d="M8 7.5h8.5L28 28.5h-8.2L8 7.5Z"/><path d="M22 7.5h6L17.2 27h-6L22 7.5Z"/></svg>
+        </div>
+        <div><strong>VentureLens</strong><span>投资研究工作台</span></div>
+      </div>
+      <button class="new-review" id="newReviewButton">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        新建 BP 核查
+        <kbd>⌘ K</kbd>
+      </button>
+      <div class="history-label">最近核查</div>
+      <nav class="history-list" id="historyList" aria-label="历史核查"></nav>
+      <div class="sidebar-bottom">
+        <div class="model-pill"><span class="status-dot" id="modelDot"></span><span id="modelText">检查 DeepSeek…</span></div>
+        <button class="sidebar-link" id="helpButton"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.5 2.5 0 0 1 4.8 1c0 1.8-2.5 2-2.5 3.5M12 17h.01"/></svg>核查说明</button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <button class="icon-button mobile-menu" id="menuButton" aria-label="打开菜单"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <div class="conversation-title" id="conversationTitle">新建 BP 核查</div>
+        <div class="top-actions">
+          <span class="secure-label"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/></svg>匿名浏览器隔离</span>
+        </div>
+      </header>
+
+      <section class="conversation" id="conversation" aria-live="polite">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-orbit">
+            <div class="empty-logo"><svg viewBox="0 0 36 36"><path d="M8 7.5h8.5L28 28.5h-8.2L8 7.5Z"/><path d="M22 7.5h6L17.2 27h-6L22 7.5Z"/></svg></div>
+          </div>
+          <p class="eyebrow">BP DUE DILIGENCE COPILOT</p>
+          <h1>把商业计划书交给我，<br><em>从声明到证据逐项核查。</em></h1>
+          <p class="empty-copy">上传 BP 即可开始，公司名称可选填。系统会从材料中识别公司，梳理商业逻辑、核查公开信息、标记风险，并生成可下载的投资研究报告。</p>
+          <div class="suggestions">
+            <button data-suggestion="重点核查团队履历、客户真实性和收入数据"><span>01</span>团队、客户与收入</button>
+            <button data-suggestion="重点核查市场规模测算、竞争格局和产品壁垒"><span>02</span>市场与竞争壁垒</button>
+            <button data-suggestion="站在 A 轮投资人角度，全面核查这份 BP"><span>03</span>A 轮投资视角</button>
+          </div>
+        </div>
+        <div class="message-stream hidden" id="messageStream"></div>
+      </section>
+
+      <footer class="composer-wrap">
+        <div class="file-preview hidden" id="filePreview">
+          <div class="file-icon">BP</div>
+          <div><strong id="fileName"></strong><span id="fileMeta"></span></div>
+          <button id="removeFile" aria-label="移除文件">×</button>
+        </div>
+        <form class="composer" id="composer">
+          <input id="fileInput" type="file" accept=".pdf,.pptx,.docx,.txt,.md,application/pdf" hidden>
+          <button class="attach-button" id="attachButton" type="button" aria-label="上传 BP"><svg viewBox="0 0 24 24"><path d="m20.5 11.5-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.7 9.7a2 2 0 0 1-2.8-2.8l8.9-8.9"/></svg></button>
+          <div class="inputs">
+            <input id="companyInput" placeholder="公司名称（可选，可从 BP 识别）" autocomplete="off">
+            <textarea id="promptInput" rows="1" placeholder="补充核查要求，或在报告完成后继续追问…"></textarea>
+          </div>
+          <button class="send-button" id="sendButton" type="submit" aria-label="开始核查"><svg viewBox="0 0 24 24"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg></button>
+        </form>
+        <p class="composer-note">点击回形针或把 BP 拖入输入框 · AI 结论仅供投资研究参考</p>
+      </footer>
+    </main>
+  </div>
+
+  <dialog id="helpDialog">
+    <button class="dialog-close" id="closeHelp">×</button>
+    <p class="eyebrow">HOW IT WORKS</p>
+    <h2>核查不是复述 BP</h2>
+    <p>系统会把 BP 内容视作待核实的公司自述，区分公开支持、存在冲突、仅 BP 自述、资料不足和分析推断。联网检索失败时仍会保留已有草稿，并明确披露限制。</p>
+    <p>支持 PDF、PPTX、DOCX、TXT 和 Markdown，默认最大 20 MB。</p>
+    <p>无需登录。系统使用长期匿名浏览器 Cookie 隔离任务，同一浏览器再次打开仍能看到自己的历史、报告与聊天；清除 Cookie、使用无痕模式或更换浏览器后会成为新的匿名用户。</p>
+  </dialog>
+  <div class="toast-region" id="toastRegion"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

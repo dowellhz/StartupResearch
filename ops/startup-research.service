@@ -1,0 +1,24 @@
+[Unit]
+Description=VentureLens BP Review
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nlvcadmin
+Group=nlvcadmin
+WorkingDirectory=/home/nlvcadmin/startup-research
+Environment=NODE_ENV=production
+EnvironmentFile=/home/nlvcadmin/startup-research/.env
+ExecStart=/usr/bin/node /home/nlvcadmin/startup-research/server.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=full
+ReadWritePaths=/home/nlvcadmin/startup-research/data
+
+[Install]
+WantedBy=multi-user.target
