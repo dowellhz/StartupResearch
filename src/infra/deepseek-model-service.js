@@ -182,6 +182,8 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
               ...claims.slice(0, 16).map((claim) => `${claim.id}: ${claim.statement}`)
             ] : []),
             "只保留与目标公司、团队、市场或竞争判断直接相关的网页。",
+            "对高优先级声明同时寻找独立支持和反向证据；不得因为搜索不到就填写 conflicts。",
+            "公司主体优先政府公示和监管记录；团队优先任职机构、论文、专利和正式采访；客户与收入优先客户官网、采购公告和上市公司披露；市场数据优先统计机构、监管机构和上市公司文件；技术壁垒优先专利、论文和监管记录。",
             ...(clinicalTrials ? [
               "这是临床试验专项检索，必须优先搜索 clinicaltrials.gov 的官方试验记录。",
               "对每项相关试验提取 NCT 编号、试验名称、阶段、当前状态、申办方、适应症、入组人数、主要终点和最近更新时间。",

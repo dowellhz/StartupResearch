@@ -25,9 +25,14 @@ test("quality gate scores evidence coverage and flags overconfident absence clai
   const quality = assessReportQuality(report, {
     sources: [{ title: "Official", url: "https://clinicaltrials.gov/study/NCT00000001", snippet: "The registered trial is currently recruiting participants.", supports: ["claim_1"] }],
     crossCheck: { coverage: [{ claimId: "claim_1", status: "supported", hasCandidateEvidence: true }] },
+    businessAudit: { summary: { metricCount: 2, checkCount: 1, conflictCount: 1 } },
+    claimLedger: { summary: { total: 1, supported: 1, conflicted: 0, highPriorityOpen: 0 } },
     companyIdentity: { confidence: "high", acceptedName: "示例公司" }
   });
   assert.ok(quality.score >= 70);
   assert.equal(quality.findings.some((item) => item.code === "absence_as_fact"), true);
+  assert.equal(quality.findings.some((item) => item.code === "business_metric_conflict"), true);
+  assert.equal(quality.metrics.auditedMetricCount, 2);
+  assert.equal(quality.metrics.claimLedgerCount, 1);
   assert.equal(quality.components.evidence, 31);
 });

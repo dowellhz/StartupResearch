@@ -1,6 +1,6 @@
 import { REPORT_SECTIONS } from "./review-prompts.js";
 
-export function buildFallbackReport({ companyName, analysis = {}, sources = [], warning = "" } = {}) {
+export function buildFallbackReport({ companyName, analysis = {}, businessAudit = {}, claimLedger = {}, sources = [], warning = "" } = {}) {
   const claims = Array.isArray(analysis.claims) ? analysis.claims : [];
   const risks = Array.isArray(analysis.risks) ? analysis.risks : [];
   const missing = Array.isArray(analysis.missingInformation) ? analysis.missingInformation : [];
@@ -14,7 +14,8 @@ export function buildFallbackReport({ companyName, analysis = {}, sources = [], 
     ["竞争格局与差异化", claimsByDomain(claims, /竞争|差异|壁垒/)],
     ["技术与产品壁垒", claimsByDomain(claims, /技术|产品|专利|研发/)],
     ["融资诉求与资金用途", claimsByDomain(claims, /融资|资金|估值/)],
-    ["关键声明核查表", claimsTable(claims)],
+    ["数字与经营假设审计", auditText(businessAudit)],
+    ["关键声明核查表", claimsTable(claims, claimLedger)],
     ["核心风险与红旗", risksText(risks)],
     ["待核实信息与尽调问题", listText(missing, "需结合 BP 原文、公司底稿及第三方证据继续核实。")],
     ["建议与下一步", "建议优先核验高重要性声明，取得工商、财务、客户、技术及知识产权底稿后重新生成完整报告。模型长报告输出异常不代表 BP 声明为假。"],
@@ -33,9 +34,32 @@ function claimsByDomain(claims, pattern) {
   return matched.length ? matched.map((claim) => `- ${claim.statement}（BP 依据：${claim.bpEvidence || "未标注"}）`).join("\n") : "BP 未提供或结构化提取未识别到该维度的明确声明。";
 }
 
-function claimsTable(claims) {
-  const rows = claims.slice(0, 30).map((claim) => `| ${tableCell(claim.statement)} | ${tableCell(claim.bpEvidence || "未标注")} | 本阶段未完成逐项公开核验 | 仅BP自述 | 中 | 补充原始底稿与第三方证据 |`);
+function claimsTable(claims, ledger) {
+  const cards = Array.isArray(ledger?.claims) && ledger.claims.length ? ledger.claims : claims;
+  const rows = cards.slice(0, 30).map((claim) => `| ${tableCell(claim.statement)} | ${tableCell(claim.bpEvidence || "未标注")} | ${tableCell(sourceSummary(claim))} | ${claimJudgment(claim.status)} | ${claim.confidence || "低"} | ${tableCell(claim.nextAction || claim.verificationNeed || "补充原始底稿与第三方证据")} |`);
   return ["| 声明 | BP依据 | 公开核验 | 判断 | 置信度 | 下一步 |", "|---|---|---|---|---|---|", ...(rows.length ? rows : ["| 未提取到明确声明 | 未提供 | 资料不足 | 资料不足 | 低 | 重新解析材料 |"])].join("\n");
+}
+
+function auditText(audit) {
+  const checks = Array.isArray(audit?.checks) ? audit.checks : [];
+  const rows = checks.slice(0, 30).map((item) => `| ${tableCell(item.description)} | ${tableCell(item.formula || "未形成公式")} | ${tableCell(item.result || "无法复算")} | ${auditStatus(item.status)} | ${tableCell(item.bpEvidence || "未标注")} | ${tableCell(item.nextStep || "取得底层数据复核")} |`);
+  if (!rows.length) return "BP 未提供足以形成确定性复算的结构化数字，需补充财务、客户或经营底表。";
+  return ["| 检查事项 | 公式 | 复算结果 | 状态 | BP依据 | 下一步 |", "|---|---|---|---|---|---|", ...rows].join("\n");
+}
+
+function sourceSummary(claim) {
+  if (claim?.conflictingSources?.length) return `存在 ${claim.conflictingSources.length} 个冲突来源`;
+  if (claim?.supportingSources?.length) return `${claim.supportingSources.length} 个公开来源支持`;
+  if (claim?.candidateSources?.length) return `${claim.candidateSources.length} 个候选来源待确认`;
+  return "本阶段未形成直接公开证据";
+}
+
+function claimJudgment(status) {
+  return { supported: "公开支持", conflicted: "存在冲突", candidate: "资料不足", bp_only: "仅BP自述", insufficient: "资料不足" }[status] || "仅BP自述";
+}
+
+function auditStatus(status) {
+  return { consistent: "一致", conflict: "存在冲突", uncertain: "资料不足", not_calculable: "无法复算" }[status] || "资料不足";
 }
 
 function risksText(risks) {

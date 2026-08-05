@@ -17,6 +17,11 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
     complete: async () => JSON.stringify({
       companyProfile: { companyName: "示例科技", companyNameConfidence: "high", companyNameEvidence: ["封面"] },
       claims: [{ id: "c1", domain: "客户", statement: "已有十家客户", bpEvidence: "第 5 页", importance: "high" }],
+      businessAudit: {
+        metrics: [{ id: "m1", category: "customer", name: "客户数", value: 10, unit: "家", period: "当前", bpEvidence: "第5页", sourceClaimIds: ["c1"] }],
+        checks: [{ id: "a1", type: "arithmetic", status: "not_calculable", severity: "medium", description: "缺少客单价，无法复算收入", formula: "收入=客户数×客单价", inputs: [], result: "", bpEvidence: "第5页", relatedMetricIds: ["m1"], nextStep: "索取客户收入明细" }],
+        assumptions: []
+      },
       risks: [],
       searchQueries: ["示例科技 客户"],
       missingInformation: []
@@ -43,7 +48,12 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
   assert.equal(result.ok, true, result.error);
   assert.equal(result.value.job.status, "completed");
   assert.equal(result.value.job.companyName, "示例科技");
+  assert.equal(result.value.job.businessAudit.summary.metricCount, 1);
+  assert.equal(result.value.job.claimLedger.summary.supported, 1);
+  assert.equal(result.value.job.researchPlan.claimPlans[0].claimId, "c1");
+  assert.ok(result.value.job.sources[0].retrievedAt);
   assert.equal(Object.keys(result.value.job.checkpoints).length, pipeline.steps.length);
+  assert.equal(pipeline.steps.some((step) => step.key === "business-audit"), true);
   assert.match(report, /## 关键声明核查表/);
   assert.equal(storedPdf, "generated-pdf");
   assert.equal(result.value.job.pdfStoragePath, "20260804/bp_test.pdf");

@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { buildBpBusinessAudit } from "./bp-business-audit.js";
+import { buildClaimLedger } from "./claim-ledger.js";
 import { Result } from "./result.js";
 import { assessReportQuality, stabilizeReport } from "./report-quality-service.js";
 import { buildFallbackReport } from "./report-fallback.js";
 import { buildEvidenceAssessment, normalizeEvidenceSources } from "./research-evidence-service.js";
 import { buildFollowupSuggestions } from "./followup-suggestion-service.js";
-import { planReviewResearchTools } from "./research-tool-planner.js";
+import { buildReviewResearchPlan } from "./research-tool-planner.js";
 import { buildExtractionMessages, buildReportMessages } from "./review-prompts.js";
 import { completeStructuredJson } from "./structured-model-call.js";
 import { redactSensitiveText, sanitizeVisibleFilename } from "../../public/privacy-redaction.js";
@@ -13,6 +15,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
   const steps = [
     { key: "document-parse", label: "解析商业计划书", run: parseDocument },
     { key: "claim-extraction", label: "提取关键声明与假设", run: extractClaims },
+    { key: "business-audit", label: "审计数字与经营假设", run: auditBusinessClaims },
     { key: "review-framework", label: "建立核查框架", run: buildFramework },
     { key: "public-research", label: "检索公开资料", run: collectPublicSources },
     { key: "cross-check", label: "交叉核查与风险研判", run: crossCheck },
@@ -27,19 +30,19 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       if (signal?.aborted) return Result.fail("任务已终止", { failedStep: step.key });
       if (context.job.checkpoints?.[step.key]?.completed) {
         context = restoreCheckpoint(context, step.key);
-        emit(context, "stage", stageEvent(step, index, "restored", "已从 checkpoint 恢复"));
+        emit(context, "stage", stageEvent(step, index, steps.length, "restored", "已从 checkpoint 恢复"));
         continue;
       }
-      emit(context, "stage", stageEvent(step, index, "running", runningMessage(step.key)));
+      emit(context, "stage", stageEvent(step, index, steps.length, "running", runningMessage(step.key)));
       try {
         context.job = await repository.save(context.job);
         context = await step.run(context);
-        const completion = stageEvent(step, index, "completed", completedMessage(step.key, context));
+        const completion = stageEvent(step, index, steps.length, "completed", completedMessage(step.key, context));
         if (step.key === "claim-extraction") Object.assign(completion, { companyName: context.job.companyName, title: context.job.title });
         emit(context, "stage", completion);
         await checkpoint(context, step.key);
       } catch (error) {
-        emit(context, "stage", stageEvent(step, index, "failed", error.message || String(error)));
+        emit(context, "stage", stageEvent(step, index, steps.length, "failed", error.message || String(error)));
         await repository.save(context.job).catch(() => {});
         return Result.fail(error, { failedStep: step.key, context });
       }
@@ -49,6 +52,8 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       quality: context.quality,
       status: context.job.status,
       sources: context.sources,
+      claimLedgerSummary: context.claimLedger?.summary,
+      businessAuditSummary: context.businessAudit?.summary,
       followupSuggestions: context.job.followupSuggestions
     });
     return Result.ok(context);
@@ -65,14 +70,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       mimeType: context.job.upload.mimeType
     }, {
       signal: context.signal,
-      onProgress: ({ message }) => emit(context, "stage", {
-        key: "document-parse",
-        label: "解析商业计划书",
-        index: 0,
-        total: 8,
-        status: "running",
-        message
-      })
+      onProgress: ({ message }) => emit(context, "stage", stageFor("document-parse", "running", message))
     });
     if (!result.ok) throw new Error(result.error);
     return {
@@ -92,7 +90,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
         signal: context.signal,
         maxTokens: 6000,
         validate: validateAnalysis,
-        onRetry: () => emit(context, "stage", stageEvent(steps[1], 1, "running", "DeepSeek JSON 格式异常，正在自动修复并重试（2/2）…"))
+        onRetry: () => emit(context, "stage", stageFor("claim-extraction", "running", "DeepSeek JSON 格式异常，正在自动修复并重试（2/2）…"))
       });
     } catch (error) {
       if (context.signal?.aborted) throw error;
@@ -115,17 +113,15 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     return { ...context, analysis, companyIdentity, extractionWarning, job };
   }
 
+  async function auditBusinessClaims(context) {
+    return { ...context, businessAudit: buildBpBusinessAudit(context.analysis.businessAudit) };
+  }
+
   async function buildFramework(context) {
-    const domains = new Set(context.analysis.claims.map((claim) => claim.domain).filter(Boolean));
-    return {
-      ...context,
-      framework: {
-        domains: Array.from(domains),
-        criticalClaims: context.analysis.claims.filter((claim) => ["critical", "high"].includes(claim.importance)),
-        searchQueries: Array.isArray(context.analysis.searchQueries) ? context.analysis.searchQueries.slice(0, 5) : [],
-        requestedTools: planReviewResearchTools(context.analysis)
-      }
-    };
+    const framework = buildReviewResearchPlan(context.analysis, {
+      companyName: context.job.companyName || context.analysis.companyProfile?.companyName
+    });
+    return { ...context, framework };
   }
 
   async function collectPublicSources(context) {
@@ -138,10 +134,13 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
         queries: context.framework.searchQueries,
         claims: context.framework.criticalClaims,
         requestedTools: context.framework.requestedTools,
-        onToolCall: (tool) => emit(context, "stage", stageEvent(steps[3], 3, "running", `正在调用 ${tool.label} 工具…`)),
+        onToolCall: (tool) => emit(context, "stage", stageFor("public-research", "running", `正在调用 ${tool.label} 工具…`)),
         signal: context.signal
       });
-      const normalized = normalizeEvidenceSources(sources);
+      const normalized = normalizeEvidenceSources(sources).map((source) => ({
+        ...source,
+        retrievedAt: source.retrievedAt || now()
+      }));
       return {
         ...context,
         sources: normalized,
@@ -154,9 +153,15 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
 
   async function crossCheck(context) {
     const assessment = buildEvidenceAssessment({ claims: context.analysis.claims, sources: context.sources });
+    const claimLedger = buildClaimLedger({
+      claims: context.analysis.claims,
+      sources: assessment.sources,
+      coverage: assessment.coverage
+    });
     return {
       ...context,
       sources: assessment.sources,
+      claimLedger,
       crossCheck: { coverage: assessment.coverage, ...assessment.metrics }
     };
   }
@@ -167,6 +172,9 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       instruction: context.job.instruction,
       document: context.document,
       analysis: context.analysis,
+      businessAudit: context.businessAudit,
+      claimLedger: context.claimLedger,
+      researchPlan: context.framework,
       sources: context.sources,
       crossCheck: context.crossCheck
     });
@@ -195,10 +203,17 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
         if (context.signal?.aborted) throw error;
         lastError = error.message || String(error);
       }
-      emit(context, "stage", stageEvent(steps[5], 5, "running", `长报告输出异常，正在自动重试（${attempt}/2）…`));
+      emit(context, "stage", stageFor("report-generation", "running", `长报告输出异常，正在自动重试（${attempt}/2）…`));
     }
     const generationWarning = `DeepSeek 长报告输出异常：${lastError}。已使用结构化阶段结果生成可恢复报告。`;
-    const report = redactSensitiveText(buildFallbackReport({ companyName: context.job.companyName, analysis: context.analysis, sources: context.sources, warning: generationWarning }));
+    const report = redactSensitiveText(buildFallbackReport({
+      companyName: context.job.companyName,
+      analysis: context.analysis,
+      businessAudit: context.businessAudit,
+      claimLedger: context.claimLedger,
+      sources: context.sources,
+      warning: generationWarning
+    }));
     emit(context, "report_delta", { delta: report });
     return { ...context, report, generationWarning };
   }
@@ -211,6 +226,8 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     const quality = assessReportQuality(stabilized, {
       sources: context.sources,
       crossCheck: context.crossCheck,
+      businessAudit: context.businessAudit,
+      claimLedger: context.claimLedger,
       document: context.document,
       companyIdentity: context.companyIdentity || context.job.companyIdentity
     });
@@ -246,6 +263,9 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       pdfStoragePath,
       quality: context.quality,
       sources: context.sources,
+      businessAudit: context.businessAudit,
+      claimLedger: context.claimLedger,
+      researchPlan: context.framework,
       researchWarning: context.researchWarning || "",
       generationWarning: context.generationWarning || "",
       extractionWarning: context.extractionWarning || "",
@@ -269,6 +289,11 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       }
     };
     context.job = await repository.save(nextJob);
+  }
+
+  function stageFor(key, status, message) {
+    const index = steps.findIndex((step) => step.key === key);
+    return stageEvent(steps[index], index, steps.length, status, message);
   }
 
   return { execute, steps: steps.map(({ key, label }) => ({ key, label })) };
@@ -295,9 +320,10 @@ function checkpointArtifact(context, stepKey) {
   const artifacts = {
     "document-parse": { document: context.document, upload: context.job.upload },
     "claim-extraction": { analysis: context.analysis, companyIdentity: context.companyIdentity, extractionWarning: context.extractionWarning },
+    "business-audit": { businessAudit: context.businessAudit },
     "review-framework": { framework: context.framework },
     "public-research": { sources: context.sources, researchWarning: context.researchWarning },
-    "cross-check": { crossCheck: context.crossCheck },
+    "cross-check": { crossCheck: context.crossCheck, claimLedger: context.claimLedger },
     "report-generation": { report: context.report },
     "quality-gate": { report: context.report, quality: context.quality },
     "persist-report": {}
@@ -311,7 +337,14 @@ function restoreCheckpoint(context, stepKey) {
 
 function validateAnalysis(analysis) {
   if (!Array.isArray(analysis.claims)) throw new Error("模型未返回关键声明列表");
-  return analysis;
+  const usedIds = new Set();
+  const claims = analysis.claims.map((claim, index) => {
+    let id = String(claim?.id || `claim_${index + 1}`).trim();
+    if (!id || usedIds.has(id)) id = `claim_${index + 1}`;
+    usedIds.add(id);
+    return { ...claim, id };
+  });
+  return { ...analysis, claims };
 }
 
 function fallbackAnalysis(context, warning) {
@@ -319,6 +352,7 @@ function fallbackAnalysis(context, warning) {
   return {
     companyProfile: { companyName },
     claims: [],
+    businessAudit: { metrics: [], checks: [], assumptions: [] },
     risks: [{ category: "数据质量", description: "结构化声明提取未形成有效 JSON，报告需结合 BP 原文复核", severity: "high", basis: warning }],
     searchQueries: companyName ? [`${companyName} 公司 团队 产品 融资`] : [],
     missingInformation: ["结构化关键声明清单需人工复核"],
@@ -389,15 +423,16 @@ function emit(context, type, data) {
   context.onEvent?.({ type, data, at: new Date().toISOString() });
 }
 
-function stageEvent(step, index, status, message) {
-  return { key: step.key, label: step.label, index, total: 8, status, message };
+function stageEvent(step, index, total, status, message) {
+  return { key: step.key, label: step.label, index, total, status, message };
 }
 
 function runningMessage(key) {
   return {
     "document-parse": "正在读取文件文本层并整理页面结构…",
     "claim-extraction": "DeepSeek 正在提取关键事实、数字与商业假设…",
-    "review-framework": "正在按团队、市场、产品、财务和融资建立核查框架…",
+    "business-audit": "正在复算 BP 数字关系并识别经营预测中的关键假设…",
+    "review-framework": "正在为高优先级声明分配核验目标与搜索查询…",
     "public-research": "DeepSeek Agentic Search 正在检索公司、团队、市场、竞争及专项数据库…",
     "cross-check": "正在区分公开支持、冲突、自述与资料不足…",
     "report-generation": "DeepSeek 正在撰写完整核查报告…",
@@ -409,9 +444,12 @@ function runningMessage(key) {
 function completedMessage(key, context) {
   if (key === "document-parse") return `已解析 ${context.document.pageCount || "未知"} 页，${context.document.originalChars} 个字符`;
   if (key === "claim-extraction") return context.extractionWarning || `已提取 ${context.analysis.claims.length} 条关键声明`;
-  if (key === "review-framework") return `已覆盖 ${context.framework.domains.length} 个核查维度`;
+  if (key === "business-audit") return context.businessAudit.summary.metricCount
+    ? `已整理 ${context.businessAudit.summary.metricCount} 个指标并完成 ${context.businessAudit.summary.checkCount} 项复算检查`
+    : "BP 未形成可复算的结构化数字，已保留待补信息";
+  if (key === "review-framework") return `已覆盖 ${context.framework.domains.length} 个核查维度，为 ${context.framework.claimPlans.length} 条声明建立研究计划`;
   if (key === "public-research") return context.sources.length ? `已收集 ${context.sources.length} 个公开来源` : (context.researchWarning || "未形成公开来源");
-  if (key === "cross-check") return `已核对 ${context.crossCheck.coverage.length} 条高优先级声明`;
+  if (key === "cross-check") return `已生成 ${context.claimLedger.summary.total} 张声明证据卡，其中 ${context.claimLedger.summary.supported} 条获公开支持`;
   if (key === "report-generation") return `报告正文已生成，共 ${context.report.length} 个字符`;
   if (key === "quality-gate") return `质量评分 ${context.quality.score}，${context.quality.findings.length} 个提示`;
   if (key === "persist-report") return "报告已保存，可下载 PDF";
