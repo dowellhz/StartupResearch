@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 import { createReviewJob } from "./bp-review-pipeline.js";
+import { publicRefresh } from "./evidence-refresh-service.js";
 import { buildFollowupMessages } from "./review-prompts.js";
 import { transitionReview } from "./review-state-machine.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
 
-export function createReviewManagerService({ pipeline, repository, model, now = () => new Date().toISOString() }) {
+export function createReviewManagerService({ pipeline, repository, model, evidenceRefreshService, now = () => new Date().toISOString() }) {
   const subscribers = new Map();
   const controllers = new Map();
+  const refreshControllers = new Map();
   const deletedIds = new Set();
   const pendingCreates = new Map();
 
@@ -44,15 +46,18 @@ export function createReviewManagerService({ pipeline, repository, model, now = 
 
   async function retry(id, { ownerId } = {}) {
     const existing = await requireOwnedJob(id, ownerId);
+    assertNoEvidenceRefresh(existing);
     if (!new Set(["failed", "needs_attention"]).has(existing.status)) throw new Error("只有失败或需关注的任务可以重试");
-    const resumed = transitionReview(existing, "running");
-    await repository.save({ ...resumed, error: "", failedStep: "" });
+    const restartKey = recoverableRestartKey(existing);
+    const resumed = resetPipelineFrom(transitionReview(existing, "running"), pipeline.steps, restartKey);
+    const saved = await repository.save({ ...resumed, error: "", failedStep: "" });
     queueMicrotask(() => run(id).catch(() => {}));
-    return publicJob(resumed);
+    return publicJob(saved);
   }
 
   async function reanalyze(id, { ownerId } = {}) {
     const existing = await requireOwnedJob(id, ownerId);
+    assertNoEvidenceRefresh(existing);
     if (existing.status === "running") throw new Error("任务正在运行，无需重复提交");
     const upload = await repository.getUpload?.(id, existing.upload?.storagePath);
     if (!upload?.length) throw new Error("原始 BP 未保存，请重新上传文件发起核查");
@@ -65,6 +70,7 @@ export function createReviewManagerService({ pipeline, repository, model, now = 
       error: "",
       failedStep: "",
       reanalysisInProgress: true,
+      previousAnalysisSnapshot: null,
       previousReportArchive: archivedReport || ""
     });
     queueMicrotask(() => run(id).catch(() => {}));
@@ -73,12 +79,14 @@ export function createReviewManagerService({ pipeline, repository, model, now = 
 
   async function replaceBp(id, { instruction, upload }, { ownerId } = {}) {
     const existing = await requireOwnedJob(id, ownerId);
+    assertNoEvidenceRefresh(existing);
     if (existing.status === "running") throw new Error("任务正在运行，请完成后再上传新版 BP");
     if (!upload?.data || !upload?.filename) throw new Error("请上传新版商业计划书");
     const buffer = Buffer.from(upload.data, "base64");
     const uploadHash = createHash("sha256").update(buffer).digest("hex");
     const storagePath = await repository.saveUpload(id, buffer);
     const archivedReport = await repository.archiveReport?.(id);
+    const previousAnalysisSnapshot = buildPreviousAnalysisSnapshot(existing);
     const resumed = transitionReview(existing, "running");
     const messages = [
       ...(existing.messages || []),
@@ -94,6 +102,7 @@ export function createReviewManagerService({ pipeline, repository, model, now = 
       error: "",
       failedStep: "",
       reanalysisInProgress: true,
+      previousAnalysisSnapshot,
       previousReportArchive: archivedReport || ""
     });
     queueMicrotask(() => run(id).catch(() => {}));
@@ -104,6 +113,7 @@ export function createReviewManagerService({ pipeline, repository, model, now = 
     await requireOwnedJob(id, ownerId);
     deletedIds.add(id);
     controllers.get(id)?.abort(new Error("对话已删除"));
+    refreshControllers.get(id)?.abort(new Error("对话已删除"));
     const result = await repository.archiveConversation(id);
     publish(id, { type: "deleted", data: { id }, at: now() });
     return { id, uploadRetained: result.uploadRetained, pdfRetained: result.pdfRetained };
@@ -141,6 +151,44 @@ export function createReviewManagerService({ pipeline, repository, model, now = 
       }
     } finally {
       controllers.delete(id);
+      if (deletedIds.has(id)) await repository.archiveConversation(id);
+    }
+  }
+
+  async function refreshEvidence(id, { ownerId } = {}) {
+    if (!evidenceRefreshService) throw new Error("公开资料刷新服务未启用");
+    const existing = await requireOwnedJob(id, ownerId);
+    if (!["completed", "needs_attention"].includes(existing.status) || !existing.reportAvailable) {
+      throw new Error("请等待 BP 核查报告完成后再刷新公开资料");
+    }
+    assertNoEvidenceRefresh(existing);
+    const evidenceRefresh = evidenceRefreshService.createRefresh();
+    const job = await repository.save({ ...existing, evidenceRefresh });
+    queueMicrotask(() => runEvidenceRefresh(id).catch(() => {}));
+    return publicJob(job);
+  }
+
+  async function runEvidenceRefresh(id) {
+    if (!evidenceRefreshService || refreshControllers.has(id) || deletedIds.has(id)) return;
+    const job = await requireJob(id);
+    if (!["queued", "running"].includes(job.evidenceRefresh?.status)) return;
+    const controller = new AbortController();
+    refreshControllers.set(id, controller);
+    publish(id, { type: "refresh_snapshot", data: { refresh: publicRefresh(job.evidenceRefresh), result: job.lastEvidenceRefresh || null }, at: now() });
+    try {
+      const result = await evidenceRefreshService.execute(job, {
+        signal: controller.signal,
+        onEvent: (event) => publish(id, event)
+      });
+      if (!result.ok) {
+        publish(id, { type: "refresh_error", data: {
+          message: result.error,
+          failedStep: result.failedStep,
+          refresh: publicRefresh(result.context?.job?.evidenceRefresh)
+        }, at: now() });
+      }
+    } finally {
+      refreshControllers.delete(id);
       if (deletedIds.has(id)) await repository.archiveConversation(id);
     }
   }
@@ -205,7 +253,8 @@ export function createReviewManagerService({ pipeline, repository, model, now = 
       history,
       question: text,
       researchSources,
-      researchWarning
+      researchWarning,
+      evidenceRefresh: job.lastEvidenceRefresh
     }), { signal, onDelta: (delta) => onDelta?.(redactSensitiveText(delta)), maxTokens: 4000 }));
     const messages = [
       ...history,
@@ -248,7 +297,7 @@ export function createReviewManagerService({ pipeline, repository, model, now = 
     return job;
   }
 
-  return { ask, create, deleteConversation, get, list, reanalyze, replaceBp, retry, run, subscribe };
+  return { ask, create, deleteConversation, get, list, reanalyze, refreshEvidence, replaceBp, retry, run, runEvidenceRefresh, subscribe };
 }
 
 function followupProgress(key, label, status, message) {
@@ -267,12 +316,77 @@ export function buildWebSearchQueries(question) {
 }
 
 function publicJob(job) {
-  const { upload, checkpoints, ownerId, previousReportArchive, ...safe } = job;
+  const { upload, checkpoints, ownerId, previousReportArchive, previousAnalysisSnapshot, analysis, evidenceRefresh, ...safe } = job;
   return {
     ...safe,
     upload: upload ? { filename: upload.filename, mimeType: upload.mimeType, size: upload.size } : null,
-    checkpointCount: Object.keys(checkpoints || {}).length
+    checkpointCount: Object.keys(checkpoints || {}).length,
+    evidenceRefresh: publicRefresh(evidenceRefresh)
   };
+}
+
+function buildPreviousAnalysisSnapshot(job) {
+  if (!job?.analysis && !job?.investmentAnalysis && !job?.businessAudit) return null;
+  return {
+    completedAt: job.completedAt || "",
+    filename: job.upload?.filename || "",
+    sha256: job.upload?.sha256 || "",
+    analysis: {
+      companyProfile: job.analysis?.companyProfile || {},
+      claims: array(job.analysis?.claims).slice(0, 40).map(compactRecord),
+      risks: array(job.analysis?.risks).slice(0, 30).map(compactRecord),
+      missingInformation: array(job.analysis?.missingInformation).slice(0, 30).map((item) => compactText(item, 500))
+    },
+    businessAudit: {
+      summary: job.businessAudit?.summary || {},
+      metrics: array(job.businessAudit?.metrics).slice(0, 50).map(compactRecord),
+      checks: array(job.businessAudit?.checks).slice(0, 30).map(compactRecord),
+      assumptions: array(job.businessAudit?.assumptions).slice(0, 30).map(compactRecord)
+    },
+    investmentAnalysis: job.investmentAnalysis || null
+  };
+}
+
+function compactRecord(value) {
+  if (!value || typeof value !== "object") return {};
+  return Object.fromEntries(Object.entries(value).slice(0, 30).map(([key, item]) => [key,
+    Array.isArray(item) ? item.slice(0, 20).map((entry) => compactText(entry, 500)) : compactText(item, 800)
+  ]));
+}
+
+function compactText(value, limit) {
+  if (value === null || value === undefined) return "";
+  return String(typeof value === "object" ? JSON.stringify(value) : value).slice(0, limit);
+}
+
+function array(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function recoverableRestartKey(job) {
+  if (job.extractionWarning) return "claim-extraction";
+  if (job.investmentAnalysisWarning) return "investment-analysis";
+  if (job.generationWarning) return "report-generation";
+  return "";
+}
+
+function resetPipelineFrom(job, steps, restartKey) {
+  if (!restartKey) return job;
+  const start = steps.findIndex((step) => step.key === restartKey);
+  if (start < 0) return job;
+  const resetKeys = new Set(steps.slice(start).map((step) => step.key));
+  return {
+    ...job,
+    checkpoints: Object.fromEntries(Object.entries(job.checkpoints || {}).filter(([key]) => !resetKeys.has(key))),
+    stages: array(job.stages).map((stage) => resetKeys.has(stage.key) ? { ...stage, status: "pending", message: "" } : stage),
+    extractionWarning: restartKey === "claim-extraction" ? "" : job.extractionWarning,
+    investmentAnalysisWarning: ["claim-extraction", "investment-analysis"].includes(restartKey) ? "" : job.investmentAnalysisWarning,
+    generationWarning: ["claim-extraction", "investment-analysis", "report-generation"].includes(restartKey) ? "" : job.generationWarning
+  };
+}
+
+function assertNoEvidenceRefresh(job) {
+  if (["queued", "running"].includes(job.evidenceRefresh?.status)) throw new Error("公开资料正在刷新，请完成后再执行其他核查操作");
 }
 
 function assertOwnerId(ownerId) {

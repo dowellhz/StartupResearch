@@ -9,6 +9,8 @@ export const REPORT_SECTIONS = [
   "技术与产品壁垒",
   "融资诉求与资金用途",
   "数字与经营假设审计",
+  "投资判断与关键里程碑",
+  "新版 BP 变化",
   "关键声明核查表",
   "核心风险与红旗",
   "待核实信息与尽调问题",
@@ -58,7 +60,7 @@ export function buildExtractionMessages({ companyName, instruction, document }) 
   ];
 }
 
-export function buildReportMessages({ companyName, instruction, document, analysis, businessAudit, claimLedger, researchPlan, sources, crossCheck }) {
+export function buildReportMessages({ companyName, instruction, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, sources, crossCheck }) {
   return [
     {
       role: "system",
@@ -75,6 +77,8 @@ export function buildReportMessages({ companyName, instruction, document, analys
         "“数字与经营假设审计”必须优先使用 businessAudit，展示公式、输入、复算结果、状态和页码依据；不得把无法复算写成数字错误。",
         "市场规模必须在资料允许时给出自下而上的公式和参数；公开来源不足时列出待验证假设，不得照抄 BP 的 TAM/SAM/SOM 作为独立结论。",
         "关键声明核查表必须优先使用 claimLedger 的逐项状态和关联来源，不得仅按来源数量判断声明已获支持。",
+        "市场规模、竞品矩阵、投资判断、否决条件和里程碑必须优先使用 investmentAnalysis；结构化结果为空时明确资料缺口，不得自行补造。",
+        "“新版 BP 变化”仅在 versionComparison.available=true 时列出变化；否则写明首次核查或无可比历史版本。",
         "引用公开网页时使用 [来源标题](URL)，URL 只能来自输入 sources。",
         "报告开头给出一句总判断和 4-6 条投资要点；结尾给出可执行的优先尽调清单。",
         `以下 ${REPORT_SECTIONS.length} 个二级标题必须各出现一次：${REPORT_SECTIONS.map((item) => `## ${item}`).join("；")}`,
@@ -83,12 +87,12 @@ export function buildReportMessages({ companyName, instruction, document, analys
     },
     {
       role: "user",
-      content: buildReportInput({ companyName, instruction, document, analysis, businessAudit, claimLedger, researchPlan, crossCheck, sources })
+      content: buildReportInput({ companyName, instruction, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, crossCheck, sources })
     }
   ];
 }
 
-function buildReportInput({ companyName, instruction, document, analysis = {}, businessAudit = {}, claimLedger = {}, researchPlan = {}, crossCheck, sources = [] }) {
+function buildReportInput({ companyName, instruction, document, analysis = {}, businessAudit = {}, claimLedger = {}, researchPlan = {}, investmentAnalysis = {}, crossCheck, sources = [] }) {
   const payload = {
     companyName: String(companyName || "").slice(0, 500),
     instruction: String(instruction || "").slice(0, 4000),
@@ -118,8 +122,10 @@ function buildReportInput({ companyName, instruction, document, analysis = {}, b
     researchPlan: {
       domains: researchPlan.domains,
       claimPlans: array(researchPlan.claimPlans).slice(0, 16).map((item) => compactObject(item, 400)),
+      verificationPacks: array(researchPlan.verificationPacks).slice(0, 8).map((item) => compactObject(item, 400)),
       coverageTargets: researchPlan.coverageTargets
     },
+    investmentAnalysis: compactInvestmentAnalysis(investmentAnalysis),
     evidenceAssessment: crossCheck,
     publicSources: array(sources).slice(0, 24).map(compactSource)
   };
@@ -145,6 +151,50 @@ function buildReportInput({ companyName, instruction, document, analysis = {}, b
     result = JSON.stringify(payload);
   }
   return result;
+}
+
+function compactInvestmentAnalysis(value = {}) {
+  value ||= {};
+  return {
+    marketSizing: {
+      status: value.marketSizing?.status,
+      method: compactValue(value.marketSizing?.method, 800),
+      formula: compactValue(value.marketSizing?.formula, 800),
+      inputs: array(value.marketSizing?.inputs).slice(0, 12).map((item) => ({
+        name: compactValue(item?.name, 150), value: compactValue(item?.value, 150), unit: compactValue(item?.unit, 80),
+        origin: compactValue(item?.origin, 80), sourceIds: array(item?.sourceIds).slice(0, 12)
+      })),
+      scenarios: array(value.marketSizing?.scenarios).slice(0, 4).map((item) => ({
+        name: compactValue(item?.name, 150), result: compactValue(item?.result, 250), formula: compactValue(item?.formula, 350),
+        assumptions: array(item?.assumptions).slice(0, 8).map((entry) => compactValue(entry, 250)), sourceIds: array(item?.sourceIds).slice(0, 12)
+      })),
+      gaps: array(value.marketSizing?.gaps).slice(0, 12).map((item) => compactValue(item, 300)),
+      sourceIds: array(value.marketSizing?.sourceIds).slice(0, 30)
+    },
+    competitorMatrix: {
+      dimensions: array(value.competitorMatrix?.dimensions).slice(0, 8),
+      rows: array(value.competitorMatrix?.rows).slice(0, 8).map((item) => ({
+        name: compactValue(item?.name, 180), relationship: compactValue(item?.relationship, 250),
+        values: Object.fromEntries(Object.entries(item?.values || {}).slice(0, 8).map(([key, entry]) => [key, compactValue(entry, 250)])),
+        sourceIds: array(item?.sourceIds).slice(0, 12), confidence: item?.confidence
+      })),
+      gaps: array(value.competitorMatrix?.gaps).slice(0, 12).map((item) => compactValue(item, 300))
+    },
+    decision: {
+      stance: value.decision?.stance,
+      thesis: array(value.decision?.thesis).slice(0, 8).map((item) => compactValue(item, 350)),
+      antiThesis: array(value.decision?.antiThesis).slice(0, 8).map((item) => compactValue(item, 350)),
+      keyAssumptions: array(value.decision?.keyAssumptions).slice(0, 8).map((item) => compactValue(item, 350)),
+      vetoItems: array(value.decision?.vetoItems).slice(0, 8).map((item) => compactObject(item, 350)),
+      milestones: array(value.decision?.milestones).slice(0, 8).map((item) => compactValue(item, 350)),
+      nextSteps: array(value.decision?.nextSteps).slice(0, 8).map((item) => compactValue(item, 350))
+    },
+    versionComparison: {
+      available: value.versionComparison?.available === true,
+      summary: compactValue(value.versionComparison?.summary, 1000),
+      changes: array(value.versionComparison?.changes).slice(0, 12).map((item) => compactObject(item, 350))
+    }
+  };
 }
 
 function compactClaim(claim) {
@@ -244,7 +294,7 @@ function array(value) {
   return Array.isArray(value) ? value : [];
 }
 
-export function buildFollowupMessages({ companyName, report, history, question, researchSources = [], researchWarning = "" }) {
+export function buildFollowupMessages({ companyName, report, history, question, researchSources = [], researchWarning = "", evidenceRefresh }) {
   return [
     {
       role: "system",
@@ -257,6 +307,10 @@ export function buildFollowupMessages({ companyName, report, history, question, 
       ].join("\n")
     },
     { role: "user", content: `核查报告：\n${String(report || "").slice(0, 70000)}` },
+    ...(evidenceRefresh?.report ? [{
+      role: "user",
+      content: `最近一次公开资料刷新报告：\n${String(evidenceRefresh.report).slice(0, 24000)}`
+    }] : []),
     ...(researchSources.length || researchWarning ? [{
       role: "user",
       content: `本次联网检索：\n${JSON.stringify({ publicSources: researchSources, warning: researchWarning }).slice(0, 18000)}`

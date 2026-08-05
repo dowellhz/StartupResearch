@@ -36,7 +36,16 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
   };
   const extractor = { extract: async () => Result.ok({ text: "商业计划内容".repeat(40), pageCount: 8, originalChars: 240, truncated: false, engine: "mock" }) };
   const pdfReportService = { render: async () => Buffer.from("generated-pdf") };
-  const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService });
+  const investmentAnalysisService = { analyze: async () => ({
+    warning: "",
+    value: {
+      marketSizing: { status: "partial", scenarios: [{ name: "基准" }] },
+      competitorMatrix: { rows: [{ name: "竞品甲" }] },
+      decision: { stance: "conditional", vetoItems: [{ condition: "客户未复核" }] },
+      versionComparison: { available: false, changes: [] }
+    }
+  }) };
+  const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService });
   const job = createReviewJob({
     companyName: "示例科技",
     instruction: "全面核查",
@@ -51,9 +60,12 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
   assert.equal(result.value.job.businessAudit.summary.metricCount, 1);
   assert.equal(result.value.job.claimLedger.summary.supported, 1);
   assert.equal(result.value.job.researchPlan.claimPlans[0].claimId, "c1");
+  assert.equal(result.value.job.investmentAnalysis.decision.stance, "conditional");
+  assert.equal(result.value.job.quality.metrics.competitorCount, 1);
   assert.ok(result.value.job.sources[0].retrievedAt);
   assert.equal(Object.keys(result.value.job.checkpoints).length, pipeline.steps.length);
   assert.equal(pipeline.steps.some((step) => step.key === "business-audit"), true);
+  assert.equal(pipeline.steps.some((step) => step.key === "investment-analysis"), true);
   assert.match(report, /## 关键声明核查表/);
   assert.equal(storedPdf, "generated-pdf");
   assert.equal(result.value.job.pdfStoragePath, "20260804/bp_test.pdf");

@@ -6,12 +6,13 @@ import { assessReportQuality, stabilizeReport } from "./report-quality-service.j
 import { buildFallbackReport } from "./report-fallback.js";
 import { buildEvidenceAssessment, normalizeEvidenceSources } from "./research-evidence-service.js";
 import { buildFollowupSuggestions } from "./followup-suggestion-service.js";
+import { summarizeInvestmentAnalysis } from "./investment-analysis-service.js";
 import { buildReviewResearchPlan } from "./research-tool-planner.js";
 import { buildExtractionMessages, buildReportMessages } from "./review-prompts.js";
 import { completeStructuredJson } from "./structured-model-call.js";
 import { redactSensitiveText, sanitizeVisibleFilename } from "../../public/privacy-redaction.js";
 
-export function createBpReviewPipeline({ extractor, model, repository, pdfReportService, webResearchEnabled = true, now = () => new Date().toISOString() }) {
+export function createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, webResearchEnabled = true, now = () => new Date().toISOString() }) {
   const steps = [
     { key: "document-parse", label: "解析商业计划书", run: parseDocument },
     { key: "claim-extraction", label: "提取关键声明与假设", run: extractClaims },
@@ -19,6 +20,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     { key: "review-framework", label: "建立核查框架", run: buildFramework },
     { key: "public-research", label: "检索公开资料", run: collectPublicSources },
     { key: "cross-check", label: "交叉核查与风险研判", run: crossCheck },
+    { key: "investment-analysis", label: "形成投资分析与版本比较", run: analyzeInvestment },
     { key: "report-generation", label: "撰写研究报告", run: generateReport },
     { key: "quality-gate", label: "报告质量检查", run: qualityGate },
     { key: "persist-report", label: "保存报告与版本", run: persistReport }
@@ -54,6 +56,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       sources: context.sources,
       claimLedgerSummary: context.claimLedger?.summary,
       businessAuditSummary: context.businessAudit?.summary,
+      investmentAnalysisSummary: summarizeInvestmentAnalysis(context.investmentAnalysis),
       followupSuggestions: context.job.followupSuggestions
     });
     return Result.ok(context);
@@ -166,6 +169,22 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     };
   }
 
+  async function analyzeInvestment(context) {
+    if (!investmentAnalysisService) return { ...context, investmentAnalysis: null, investmentAnalysisWarning: "" };
+    const result = await investmentAnalysisService.analyze({
+      companyName: context.job.companyName,
+      analysis: context.analysis,
+      businessAudit: context.businessAudit,
+      claimLedger: context.claimLedger,
+      sources: context.sources,
+      previousAnalysisSnapshot: context.job.previousAnalysisSnapshot
+    }, {
+      signal: context.signal,
+      onRetry: () => emit(context, "stage", stageFor("investment-analysis", "running", "结构化投资分析格式异常，正在自动修复并重试（2/2）…"))
+    });
+    return { ...context, investmentAnalysis: result.value, investmentAnalysisWarning: result.warning };
+  }
+
   async function generateReport(context) {
     const messages = buildReportMessages({
       companyName: context.job.companyName || context.analysis.companyProfile?.companyName,
@@ -175,6 +194,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       businessAudit: context.businessAudit,
       claimLedger: context.claimLedger,
       researchPlan: context.framework,
+      investmentAnalysis: context.investmentAnalysis,
       sources: context.sources,
       crossCheck: context.crossCheck
     });
@@ -211,6 +231,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       analysis: context.analysis,
       businessAudit: context.businessAudit,
       claimLedger: context.claimLedger,
+      investmentAnalysis: context.investmentAnalysis,
       sources: context.sources,
       warning: generationWarning
     }));
@@ -228,6 +249,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       crossCheck: context.crossCheck,
       businessAudit: context.businessAudit,
       claimLedger: context.claimLedger,
+      investmentAnalysis: context.investmentAnalysis,
       document: context.document,
       companyIdentity: context.companyIdentity || context.job.companyIdentity
     });
@@ -240,6 +262,10 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       if (!quality.findings.some((item) => item.code === "extraction_warning")) {
         quality.findings.push({ code: "extraction_warning", severity: "warn", message: context.extractionWarning });
       }
+    }
+    if (context.investmentAnalysisWarning) {
+      quality.ok = false;
+      quality.findings.push({ code: "investment_analysis_warning", severity: "warn", message: context.investmentAnalysisWarning });
     }
     return { ...context, report: stabilized, quality };
   }
@@ -263,12 +289,15 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       pdfStoragePath,
       quality: context.quality,
       sources: context.sources,
+      analysis: context.analysis,
       businessAudit: context.businessAudit,
       claimLedger: context.claimLedger,
+      investmentAnalysis: context.investmentAnalysis,
       researchPlan: context.framework,
       researchWarning: context.researchWarning || "",
       generationWarning: context.generationWarning || "",
       extractionWarning: context.extractionWarning || "",
+      investmentAnalysisWarning: context.investmentAnalysisWarning || "",
       reanalysisInProgress: false,
       error: "",
       failedStep: "",
@@ -324,6 +353,7 @@ function checkpointArtifact(context, stepKey) {
     "review-framework": { framework: context.framework },
     "public-research": { sources: context.sources, researchWarning: context.researchWarning },
     "cross-check": { crossCheck: context.crossCheck, claimLedger: context.claimLedger },
+    "investment-analysis": { investmentAnalysis: context.investmentAnalysis, investmentAnalysisWarning: context.investmentAnalysisWarning },
     "report-generation": { report: context.report },
     "quality-gate": { report: context.report, quality: context.quality },
     "persist-report": {}
@@ -435,6 +465,7 @@ function runningMessage(key) {
     "review-framework": "正在为高优先级声明分配核验目标与搜索查询…",
     "public-research": "DeepSeek Agentic Search 正在检索公司、团队、市场、竞争及专项数据库…",
     "cross-check": "正在区分公开支持、冲突、自述与资料不足…",
+    "investment-analysis": "正在重建市场规模、竞品矩阵、投资判断并比较 BP 版本…",
     "report-generation": "DeepSeek 正在撰写完整核查报告…",
     "quality-gate": "正在检查章节、证据标记和核查表完整性…",
     "persist-report": "正在保存报告与可恢复 checkpoint…"
@@ -450,6 +481,10 @@ function completedMessage(key, context) {
   if (key === "review-framework") return `已覆盖 ${context.framework.domains.length} 个核查维度，为 ${context.framework.claimPlans.length} 条声明建立研究计划`;
   if (key === "public-research") return context.sources.length ? `已收集 ${context.sources.length} 个公开来源` : (context.researchWarning || "未形成公开来源");
   if (key === "cross-check") return `已生成 ${context.claimLedger.summary.total} 张声明证据卡，其中 ${context.claimLedger.summary.supported} 条获公开支持`;
+  if (key === "investment-analysis") {
+    const summary = summarizeInvestmentAnalysis(context.investmentAnalysis) || {};
+    return context.investmentAnalysisWarning || `已形成 ${summary.competitorCount || 0} 个竞品对照、${summary.vetoCount || 0} 个否决条件和 ${summary.versionChangeCount || 0} 项版本变化`;
+  }
   if (key === "report-generation") return `报告正文已生成，共 ${context.report.length} 个字符`;
   if (key === "quality-gate") return `质量评分 ${context.quality.score}，${context.quality.findings.length} 个提示`;
   if (key === "persist-report") return "报告已保存，可下载 PDF";

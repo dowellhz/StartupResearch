@@ -1,6 +1,7 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
 import { createComposerDraftController, lastUserInput } from "./composer-draft.js";
 import { bindFileDrop } from "./file-drop.js";
+import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evidence-refresh-ui.js";
 import { renderFollowupSuggestions } from "./followup-suggestions.js";
 import { renderHistoryList } from "./history-list.js";
 import { requestJson, requestResponse } from "./http-client.js";
@@ -9,6 +10,7 @@ import { applyRecoverableReport } from "./review-error.js";
 import { applyUploadRouting, submitUploadedBp } from "./review-submit.js";
 import { enterUploadedBpCompanyContext, restoreCurrentCompanyContext, setUploadAnalysisState } from "./upload-company-context.js";
 import { sanitizeVisibleFilename } from "./privacy-redaction.js";
+import { renderQualitySummary } from "./quality-summary.js";
 import { runFollowup } from "./followup-controller.js";
 import { renderStreamingMarkdown, STREAM_RENDER_INTERVAL } from "./streaming-markdown.js";
 const elements = {
@@ -52,6 +54,8 @@ const state = {
   stages: [],
   autoFollow: true
 };
+const evidenceRefreshController = createEvidenceRefreshController({ state, container: elements.messageStream, requestJson,
+  connectEvents, notify: toast, scrollBottom, refreshHistory: loadHistory });
 boot();
 
 async function boot() {
@@ -187,6 +191,10 @@ function connectEvents(id) {
   source.addEventListener("stage", ({ data }) => applyStage(JSON.parse(data)));
   source.addEventListener("report_delta", ({ data }) => applyReportDelta(JSON.parse(data).delta));
   source.addEventListener("report_complete", ({ data }) => completeReport(JSON.parse(data)));
+  source.addEventListener("refresh_snapshot", ({ data }) => evidenceRefreshController.apply(JSON.parse(data)));
+  source.addEventListener("refresh_stage", ({ data }) => evidenceRefreshController.apply(JSON.parse(data)));
+  source.addEventListener("refresh_complete", ({ data }) => evidenceRefreshController.complete(JSON.parse(data)));
+  source.addEventListener("refresh_error", ({ data }) => evidenceRefreshController.fail(JSON.parse(data)));
   source.addEventListener("error", (event) => {
     if (!event.data) return;
     const data = JSON.parse(event.data);
@@ -201,7 +209,8 @@ function applySnapshot(review) {
   state.stages = review.stages || state.stages;
   renderProgressPanel();
   if (review.report && review.reanalysisInProgress) showPreviousReportDuringReanalysis(review);
-  else if (review.report) completeReport({ report: review.report, quality: review.quality, status: review.status, sources: review.sources, followupSuggestions: review.followupSuggestions });
+  else if (review.report) completeReport({ report: review.report, quality: review.quality, status: review.status, sources: review.sources, followupSuggestions: review.followupSuggestions }, { keepEvents: isEvidenceRefreshActive(review.evidenceRefresh) });
+  evidenceRefreshController.render(review);
   if (review.error) showError(review.error);
 }
 
@@ -220,7 +229,7 @@ function applyReportDelta(delta) {
   }, STREAM_RENDER_INTERVAL);
 }
 
-function completeReport(data) {
+function completeReport(data, { keepEvents = false } = {}) {
   clearTimeout(state.reportRenderTimer);
   state.reportRenderTimer = null;
   if (data.report) state.report = data.report;
@@ -230,7 +239,7 @@ function completeReport(data) {
   renderFollowupSuggestions(document.querySelector("#followupSuggestions"), followupSuggestions, askSuggestedFollowup);
   elements.promptInput.placeholder = "继续追问：最大的投资风险是什么？";
   elements.companyInput.disabled = true;
-  state.eventSource?.close();
+  if (!keepEvents) state.eventSource?.close();
   loadHistory();
   scrollBottom();
 }
@@ -256,8 +265,9 @@ async function loadReview(id) {
     renderProgressPanel();
     if (review.report && review.reanalysisInProgress) showPreviousReportDuringReanalysis(review);
     else if (review.report) completeReport({ report: review.report, quality: review.quality, status: review.status, sources: review.sources, followupSuggestions: review.followupSuggestions });
+    evidenceRefreshController.render(review);
     for (const message of review.messages || []) renderChatMessage(message.role, message.content);
-    if (["queued", "running"].includes(review.status)) connectEvents(id);
+    if (["queued", "running"].includes(review.status) || isEvidenceRefreshActive(review.evidenceRefresh)) connectEvents(id);
     if (review.error) showError(review.error);
     elements.conversationTitle.textContent = review.title;
     elements.companyInput.value = review.companyName || "";
@@ -335,6 +345,7 @@ function ensureReportCard(streaming) {
           <div class="report-content"></div>
           <div class="report-footer ${streaming ? "hidden" : ""}">
             <button class="pdf-download-icon" data-download title="下载 PDF 核查报告" aria-label="下载 PDF 核查报告"><svg viewBox="0 0 52 62" aria-hidden="true"><path class="pdf-page" d="M8 2h25l11 11v47H8z"/><path class="pdf-fold" d="M33 2v12h11"/><text x="26" y="43" text-anchor="middle">PDF</text></svg></button>
+            <button class="refresh-evidence-button" data-refresh-evidence>刷新公开资料</button>
             <button class="reanalyze-button" data-reanalyze>重新核查</button>
           </div>
           <div class="followup-suggestions hidden" id="followupSuggestions"></div>
@@ -342,6 +353,7 @@ function ensureReportCard(streaming) {
       </article>`);
     card = document.querySelector("#reportMessage");
     card.querySelector("[data-download]").addEventListener("click", downloadCurrentPdf);
+    card.querySelector("[data-refresh-evidence]").addEventListener("click", evidenceRefreshController.start);
     card.querySelector("[data-reanalyze]").addEventListener("click", reanalyzeCurrentReview);
   }
   card.querySelector(".report-content").classList.toggle("stream-cursor", streaming);
@@ -365,22 +377,6 @@ function renderReportContent(markdown, streaming, quality) {
     renderQualitySummary(card.querySelector(".quality-summary"), quality);
   }
   scrollBottom();
-}
-
-function renderQualitySummary(container, quality) {
-  const metrics = quality.metrics || {};
-  const findings = (quality.findings || []).map((item) => typeof item === "string" ? item : item.message).filter(Boolean);
-  const values = [
-    metrics.sourceCount === undefined ? "" : `证据片段 ${metrics.evidenceRichCount || 0}/${metrics.sourceCount}`,
-    metrics.importantClaimCount === undefined ? "" : `声明覆盖 ${metrics.coveredClaimCount || 0}/${metrics.importantClaimCount}`,
-    metrics.claimLedgerCount ? `声明卡 ${metrics.supportedLedgerClaimCount || 0}/${metrics.claimLedgerCount} 获支持` : "",
-    metrics.auditedMetricCount ? `数字审计 ${metrics.numericCheckCount || 0} 项检查` : "",
-    metrics.extractionCompleteness === undefined ? "" : `解析完整度 ${Math.round(Number(metrics.extractionCompleteness) * 100)}%`
-  ].filter(Boolean);
-  container.innerHTML = `
-    <div class="quality-metrics">${values.map((value) => `<span>${escapeHtml(value)}</span>`).join("")}</div>
-    ${findings.length ? `<details><summary>${findings.length} 个质量提示</summary><ul>${findings.slice(0, 6).map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ul></details>` : ""}`;
-  container.classList.toggle("hidden", !values.length && !findings.length);
 }
 
 function renderChatMessage(role, content, streaming = false) {

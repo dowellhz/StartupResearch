@@ -142,9 +142,25 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .pdf-download-icon .pdf-fold { fill: none; stroke: #f5c8bb; stroke-width: 2; stroke-linejoin: round; }
 .pdf-download-icon text { fill: #fff; font: 800 11px Arial, sans-serif; letter-spacing: .6px; }
 .report-footer .pdf-download-icon:hover { transform: translateY(-3px) scale(1.03); filter: drop-shadow(0 7px 8px rgba(87,39,28,.22)); }
-.report-footer .reanalyze-button { margin-left: 2px; height: 36px; padding: 0 14px; border-radius: 9px; background: transparent; color: #625f59; border: 1px solid #d5cfc5; font-size: 13px; font-weight: 650; }
-.report-footer .reanalyze-button:hover { color: var(--accent-dark); border-color: var(--accent); background: #fff; }
+.report-footer .reanalyze-button, .report-footer .refresh-evidence-button { margin-left: 2px; height: 36px; padding: 0 14px; border-radius: 9px; background: transparent; color: #625f59; border: 1px solid #d5cfc5; font-size: 13px; font-weight: 650; }
+.report-footer .refresh-evidence-button { color: var(--accent-dark); border-color: #c9a99f; background: #fff9f6; }
+.report-footer .reanalyze-button:hover, .report-footer .refresh-evidence-button:hover { color: var(--accent-dark); border-color: var(--accent); background: #fff; }
 .report-footer button:disabled { opacity: .5; cursor: wait; transform: none; }
+.evidence-refresh-card { margin-top: 2px; }
+.refresh-status { margin-left: auto; border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; }
+.refresh-status.live { color: var(--accent-dark); background: #f2e6df; }
+.refresh-status.done { color: var(--green); background: #e9f2ed; }
+.refresh-status.attention { color: #8a3b28; background: #f6e8e2; }
+.refresh-stage-list { padding: 10px 20px 14px; border-bottom: 1px solid #e8e4dc; }
+.refresh-stage { display: grid; grid-template-columns: 14px 1fr; gap: 9px; padding: 7px 0; }
+.refresh-stage > span { width: 12px; height: 12px; margin-top: 3px; border: 1px solid #cfcac1; border-radius: 50%; }
+.refresh-stage.running > span { border-color: var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
+.refresh-stage.completed > span, .refresh-stage.restored > span { background: var(--green); border-color: var(--green); }
+.refresh-stage.failed > span { background: var(--accent); border-color: var(--accent); }
+.refresh-stage strong { font-size: 13px; }
+.refresh-stage p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.refresh-report { padding-top: 18px; }
+.refresh-empty { padding: 22px; color: var(--muted); font-size: 13px; }
 .followup-suggestions { padding: 16px 20px 20px; border-top: 1px solid #e6e1d8; background: #fffefb; }
 .followup-suggestions > strong { display: block; margin-bottom: 10px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .followup-suggestions > div { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -32,7 +32,8 @@ export function assessReportQuality(markdown, options = {}) {
       crossCheck: options.crossCheck,
       document: options.document,
       businessAudit: options.businessAudit,
-      claimLedger: options.claimLedger
+      claimLedger: options.claimLedger,
+      investmentAnalysis: options.investmentAnalysis
     }),
     findings
   };
@@ -141,7 +142,7 @@ function assessIdentity(identity, findings) {
   return identity.acceptedName ? 4 : 0;
 }
 
-function assessStructuredArtifacts({ businessAudit, claimLedger }, findings) {
+function assessStructuredArtifacts({ businessAudit, claimLedger, investmentAnalysis }, findings) {
   const auditSummary = businessAudit?.summary || {};
   const ledgerSummary = claimLedger?.summary || {};
   if (auditSummary.conflictCount) {
@@ -153,9 +154,12 @@ function assessStructuredArtifacts({ businessAudit, claimLedger }, findings) {
   if (ledgerSummary.highPriorityOpen) {
     findings.push(finding("high_priority_claims_open", "warn", `${ledgerSummary.highPriorityOpen} 条高优先级声明仍缺少直接公开证据`));
   }
+  if (investmentAnalysis?.marketSizing?.status === "not_calculable") {
+    findings.push(finding("market_sizing_not_calculable", "warn", "市场规模缺少足够参数，暂无法形成自下而上测算"));
+  }
 }
 
-function buildQualityMetrics({ text, sources, crossCheck, document, businessAudit, claimLedger }) {
+function buildQualityMetrics({ text, sources, crossCheck, document, businessAudit, claimLedger, investmentAnalysis }) {
   const evidenceRichCount = sources.filter(hasEvidenceExcerpt).length;
   const coverage = Array.isArray(crossCheck?.coverage) ? crossCheck.coverage : [];
   const coveredClaimCount = coverage.filter((item) => item.status && item.status !== "unverified" || item.hasCandidateEvidence).length;
@@ -173,6 +177,10 @@ function buildQualityMetrics({ text, sources, crossCheck, document, businessAudi
     auditedMetricCount: Number(businessAudit?.summary?.metricCount || 0),
     numericCheckCount: Number(businessAudit?.summary?.checkCount || 0),
     numericConflictCount: Number(businessAudit?.summary?.conflictCount || 0),
+    marketScenarioCount: Number(investmentAnalysis?.marketSizing?.scenarios?.length || 0),
+    competitorCount: Number(investmentAnalysis?.competitorMatrix?.rows?.length || 0),
+    investmentVetoCount: Number(investmentAnalysis?.decision?.vetoItems?.length || 0),
+    versionChangeCount: Number(investmentAnalysis?.versionComparison?.changes?.length || 0),
     reportCharacterCount: text.length,
     extractionCompleteness: Number(document?.extractionCompleteness ?? 1)
   };

@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { loadEnvFile, getRuntimeConfig } from "./src/config/runtime-config.js";
 import { createBpReviewPipeline } from "./src/domain/bp-review-pipeline.js";
 import { createCompanyIdentityService } from "./src/domain/company-identity-service.js";
+import { createEvidenceRefreshService } from "./src/domain/evidence-refresh-service.js";
+import { createInvestmentAnalysisService } from "./src/domain/investment-analysis-service.js";
 import { createReviewManagerService } from "./src/domain/review-manager-service.js";
 import { createDeepSeekModelService } from "./src/infra/deepseek-model-service.js";
 import { createBrowserSessionService } from "./src/infra/browser-session-service.js";
@@ -22,9 +24,11 @@ const model = createDeepSeekModelService({ config: config.model });
 const pdfOcrService = createPdfOcrService();
 const extractor = createDocumentExtractionService({ maxBytes: config.maxUploadBytes, pdfOcrService });
 const companyIdentity = createCompanyIdentityService({ extractor, model });
+const investmentAnalysis = createInvestmentAnalysisService({ model });
+const evidenceRefresh = createEvidenceRefreshService({ model, repository });
 const pdf = createPdfReportService();
-const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService: pdf, webResearchEnabled: config.webResearchEnabled });
-const manager = createReviewManagerService({ pipeline, repository, model });
+const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService: pdf, investmentAnalysisService: investmentAnalysis, webResearchEnabled: config.webResearchEnabled });
+const manager = createReviewManagerService({ pipeline, repository, model, evidenceRefreshService: evidenceRefresh });
 const browserSessions = createBrowserSessionService();
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
 
@@ -67,7 +71,7 @@ async function route(req, res) {
     return json(res, 202, { ok: true, review });
   }
 
-  const match = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)(?:\/(events|pdf|messages|retry|reanalyze|company-match))?$/);
+  const match = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)(?:\/(events|pdf|messages|retry|reanalyze|refresh|company-match))?$/);
   if (match) {
     const [, id, action] = match;
     if (req.method === "GET" && action === "events") return streamReviewEvents(req, res, id, browserSession.id);
@@ -76,6 +80,7 @@ async function route(req, res) {
     if (req.method === "POST" && action === "company-match") return matchAndRouteBp(req, res, id, browserSession.id);
     if (req.method === "POST" && action === "retry") return json(res, 202, { ok: true, review: await manager.retry(id, { ownerId: browserSession.id }) });
     if (req.method === "POST" && action === "reanalyze") return json(res, 202, { ok: true, review: await manager.reanalyze(id, { ownerId: browserSession.id }) });
+    if (req.method === "POST" && action === "refresh") return json(res, 202, { ok: true, review: await manager.refreshEvidence(id, { ownerId: browserSession.id }) });
     if (req.method === "DELETE" && !action) return json(res, 200, { ok: true, result: await manager.deleteConversation(id, { ownerId: browserSession.id }) });
     if (req.method === "GET" && !action) return json(res, 200, { ok: true, review: await manager.get(id, { ownerId: browserSession.id }) });
   }
@@ -236,6 +241,7 @@ server.listen(config.port, config.host, async () => {
   for (const job of await repository.list({ limit: 100 })) {
     if (job.reportAvailable) await ensureStoredPdf(job).catch((error) => process.stderr.write(`PDF backfill ${job.id}: ${error.message}\n`));
     if (["queued", "running"].includes(job.status)) manager.run(job.id).catch(() => {});
+    if (["queued", "running"].includes(job.evidenceRefresh?.status)) manager.runEvidenceRefresh(job.id).catch(() => {});
   }
 });
 
