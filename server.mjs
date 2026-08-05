@@ -6,6 +6,7 @@ import { loadEnvFile, getRuntimeConfig } from "./src/config/runtime-config.js";
 import { createBpReviewPipeline } from "./src/domain/bp-review-pipeline.js";
 import { createCompanyPreResearchPipeline } from "./src/domain/company-pre-research-pipeline.js";
 import { createCompanyIdentityService } from "./src/domain/company-identity-service.js";
+import { buildConversationExport } from "./src/domain/conversation-export-service.js";
 import { createEvidenceRefreshService } from "./src/domain/evidence-refresh-service.js";
 import { createInvestmentAnalysisService } from "./src/domain/investment-analysis-service.js";
 import { createReviewManagerService } from "./src/domain/review-manager-service.js";
@@ -79,11 +80,12 @@ async function route(req, res) {
     return json(res, 202, { ok: true, review });
   }
 
-  const match = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)(?:\/(events|pdf|messages|retry|reanalyze|refresh|company-match))?$/);
+  const match = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)(?:\/(events|pdf|conversation-pdf|messages|retry|reanalyze|refresh|company-match))?$/);
   if (match) {
     const [, id, action] = match;
     if (req.method === "GET" && action === "events") return streamReviewEvents(req, res, id, browserSession.id);
     if (req.method === "GET" && action === "pdf") return downloadPdf(res, id, browserSession.id);
+    if (req.method === "GET" && action === "conversation-pdf") return downloadConversationPdf(res, id, browserSession.id);
     if (req.method === "POST" && action === "messages") return streamAnswer(req, res, id, browserSession.id);
     if (req.method === "POST" && action === "company-match") return matchAndRouteBp(req, res, id, browserSession.id);
     if (req.method === "POST" && action === "retry") return json(res, 202, { ok: true, review: await manager.retry(id, { ownerId: browserSession.id }) });
@@ -168,6 +170,20 @@ async function downloadPdf(res, id, ownerId) {
     if (job) await repository.save({ ...job, pdfStoragePath });
   }
   const filename = encodeURIComponent(`${safeFilename(review.companyName || "BP")}-${review.taskType === "company_pre_research" ? "公司预研报告" : "核查报告"}.pdf`);
+  res.writeHead(200, {
+    "Content-Type": "application/pdf",
+    "Content-Length": buffer.length,
+    "Content-Disposition": `attachment; filename*=UTF-8''${filename}`,
+    "Cache-Control": "private, no-store"
+  });
+  res.end(buffer);
+}
+
+async function downloadConversationPdf(res, id, ownerId) {
+  const review = await manager.get(id, { ownerId });
+  const conversation = buildConversationExport(review);
+  const buffer = await pdf.renderConversation(conversation);
+  const filename = encodeURIComponent(`${safeFilename(review.companyName || "VentureLens")}-完整对话.pdf`);
   res.writeHead(200, {
     "Content-Type": "application/pdf",
     "Content-Length": buffer.length,

@@ -26,3 +26,25 @@ test("PDF report renders Chinese Markdown with the bundled fonts", async () => {
   assert.equal(buffer.subarray(0, 4).toString(), "%PDF");
   assert.ok(buffer.length > 1000);
 });
+
+test("whole conversation PDF renders web-like request, report and follow-up cards", async () => {
+  const service = createPdfReportService({ now: () => "2026-08-05T12:00:00.000Z" });
+  const buffer = await service.renderConversation({
+    title: "示例科技 · 完整对话",
+    companyName: "示例科技",
+    taskType: "company_pre_research",
+    status: "completed",
+    request: { instruction: "关注团队和产品", attachment: null },
+    stages: [{ label: "抓取公司公开信息", status: "completed" }],
+    reportLabel: "公司预研报告",
+    report: "# 示例科技公司预研\n\n## 预研结论\n\n**总判断**：建议继续核查。\n\n| 维度 | 判断 |\n|---|---|\n| 团队 | 待验证 |",
+    quality: { ok: true, score: 82 },
+    evidenceRefresh: { title: "公开资料刷新", report: "## 刷新结论\n\n未发现重大变化。" },
+    messages: [
+      { role: "user", content: "最大的风险是什么？" },
+      { role: "assistant", content: "客户证据仍然不足，建议补充合同。" }
+    ]
+  });
+  assert.equal(buffer.subarray(0, 4).toString(), "%PDF");
+  assert.ok(buffer.length > 3000);
+});

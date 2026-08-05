@@ -38,6 +38,22 @@ test("programmatic review labels are not persisted as explicit company input", (
   assert.equal(saved.companyExplicit, false);
 });
 
+test("clearing a submitted prompt recalculates the textarea height after its value is empty", () => {
+  const values = new Map();
+  globalThis.localStorage = storage(values);
+  const companyInput = { value: "示例科技" };
+  const promptInput = { value: "很长的预研要求" };
+  let resizedValue = "not-called";
+  const draft = createComposerDraftController({
+    companyInput,
+    promptInput,
+    onRestore: () => { resizedValue = promptInput.value; }
+  });
+  draft.clearPrompt();
+  assert.equal(promptInput.value, "");
+  assert.equal(resizedValue, "");
+});
+
 function storage(values) {
   return {
     getItem: (key) => values.get(key) || null,

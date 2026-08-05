@@ -61,6 +61,11 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 16px; }
 .secure-label { color: var(--muted); display: flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: .05em; }
 .secure-label svg { width: 13px; }
+.top-pdf-download { width: 38px; height: 38px; position: relative; display: grid; place-items: center; border: 1px solid #d7c9c3; border-radius: 10px; background: #fff9f6; color: var(--accent-dark); cursor: pointer; transition: .18s ease; }
+.top-pdf-download svg { width: 20px; }
+.top-pdf-download span { position: absolute; right: 2px; bottom: 2px; padding: 1px 2px; border-radius: 3px; background: var(--accent-dark); color: #fff; font: 700 6px/1 Arial, sans-serif; letter-spacing: .2px; }
+.top-pdf-download:hover:not(:disabled) { border-color: var(--accent); background: #fff; transform: translateY(-1px); box-shadow: 0 5px 14px rgba(87,39,28,.12); }
+.top-pdf-download:disabled { opacity: .35; cursor: default; }
 .icon-button { border: 0; background: transparent; padding: 5px; cursor: pointer; }
 .mobile-menu { display: none; }
 

@@ -1,4 +1,5 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
+import { bindComposerInput } from "./composer-keyboard.js";
 import { createComposerDraftController, lastUserInput } from "./composer-draft.js";
 import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, createComposerTaskModeController } from "./composer-task-mode.js";
 import { bindFileDrop } from "./file-drop.js";
@@ -6,6 +7,7 @@ import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evid
 import { renderFollowupSuggestions } from "./followup-suggestions.js";
 import { renderHistoryList } from "./history-list.js";
 import { requestJson, requestResponse } from "./http-client.js";
+import { downloadConversationPdf, downloadReviewPdf, syncConversationPdfButton } from "./pdf-download.js";
 import { applyDetectedCompany } from "./review-identity.js";
 import { applyRecoverableReport } from "./review-error.js";
 import { applyUploadRouting, fileToBase64, submitCompanyPreResearch, submitUploadedBp } from "./review-submit.js";
@@ -25,6 +27,7 @@ const elements = {
   composer: document.querySelector("#composer"),
   composerNote: document.querySelector("#composerNote"),
   conversation: document.querySelector("#conversation"),
+  conversationPdfButton: document.querySelector("#conversationPdfButton"),
   conversationTitle: document.querySelector("#conversationTitle"),
   emptyState: document.querySelector("#emptyState"),
   fileInput: document.querySelector("#fileInput"),
@@ -79,15 +82,13 @@ function bindEvents() {
   bindFileDrop({ dropZone: elements.composer, onFile: selectFile, onMultiple: () => toast("一次只能上传一份 BP，已选择第一个文件") });
   elements.removeFile.addEventListener("click", clearFile);
   elements.composer.addEventListener("submit", submitComposer);
+  elements.conversationPdfButton.addEventListener("click", () => downloadConversationPdf(state.currentId));
   elements.newReviewButton.addEventListener("click", resetWorkspace);
   elements.helpButton.addEventListener("click", () => elements.helpDialog.showModal());
   elements.closeHelp.addEventListener("click", () => elements.helpDialog.close());
   elements.menuButton.addEventListener("click", () => elements.sidebar.classList.toggle("open"));
   elements.companyInput.addEventListener("input", draft.saveCompany);
-  elements.promptInput.addEventListener("input", () => {
-    autoResize();
-    draft.save();
-  });
+  bindComposerInput({ textarea: elements.promptInput, form: elements.composer, submitButton: elements.sendButton, onInput: () => { autoResize(); draft.save(); } });
   elements.conversation.addEventListener("scroll", () => {
     state.autoFollow = isNearConversationBottom();
   }, { passive: true });
@@ -209,9 +210,9 @@ async function startCompanyPreResearch(prompt) {
     renderReviewRequest(elements.messageStream, { company: companyName, prompt: instruction, taskType: COMPANY_PRE_RESEARCH });
     renderProgressPanel();
     elements.conversationTitle.textContent = payload.review.title;
-    draft.clear();
+    draft.clearCompany();
+    draft.clearPrompt();
     elements.companyInput.value = companyName;
-    elements.promptInput.value = "";
     taskMode.selectAttachmentMode();
     connectEvents(state.currentId);
     await loadHistory();
@@ -336,6 +337,7 @@ async function askSuggestedFollowup(question) {
 function showConversation() {
   elements.emptyState.classList.add("hidden");
   elements.messageStream.classList.remove("hidden");
+  syncConversationPdfButton(elements.conversationPdfButton, state.currentId);
 }
 
 function renderProgressPanel() {
@@ -380,7 +382,7 @@ function ensureReportCard(streaming) {
         </div>
       </article>`);
     card = document.querySelector("#reportMessage");
-    card.querySelector("[data-download]").addEventListener("click", downloadCurrentPdf);
+    card.querySelector("[data-download]").addEventListener("click", () => downloadReviewPdf(state.currentId));
     card.querySelector("[data-refresh-evidence]").addEventListener("click", evidenceRefreshController.start);
     card.querySelector("[data-reanalyze]").addEventListener("click", reanalyzeCurrentReview);
   }
@@ -444,12 +446,10 @@ function resetWorkspace() {
   clearFile();
   taskMode.selectAttachmentMode();
   draft.clear();
+  autoResize();
+  syncConversationPdfButton(elements.conversationPdfButton, "");
   loadHistory();
   elements.sidebar.classList.remove("open");
-}
-
-function downloadCurrentPdf() {
-  if (state.currentId) window.location.href = `/api/reviews/${state.currentId}/pdf`;
 }
 
 async function reanalyzeCurrentReview() {
