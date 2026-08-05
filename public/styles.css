@@ -69,7 +69,7 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .icon-button { border: 0; background: transparent; padding: 5px; cursor: pointer; }
 .mobile-menu { display: none; }
 
-.conversation { position: relative; min-height: 0; height: 100%; overflow-x: hidden; overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
+.conversation { position: relative; min-height: 0; overflow-x: hidden; overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
 .empty-state { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px 160px; text-align: center; }
 .empty-orbit { width: 86px; height: 86px; border: 1px solid #ded8ce; border-radius: 50%; display: grid; place-items: center; position: relative; margin-bottom: 25px; }
 .empty-orbit::before { content: ""; position: absolute; width: 7px; height: 7px; background: var(--accent); border-radius: 50%; top: 5px; right: 17px; box-shadow: 0 0 0 5px var(--paper); }
