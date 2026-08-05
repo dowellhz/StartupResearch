@@ -23,7 +23,7 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .hidden { display: none !important; }
 
 .app-shell { display: grid; grid-template-columns: 272px minmax(0, 1fr); height: 100vh; height: 100dvh; overflow: hidden; }
-.sidebar { background: var(--sidebar); border-right: 1px solid var(--line); padding: 24px 18px 16px; display: flex; flex-direction: column; min-width: 0; }
+.sidebar { background: var(--sidebar); border-right: 1px solid var(--line); padding: 24px 18px 16px; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .brand-row { display: flex; align-items: center; gap: 11px; padding: 0 7px 24px; }
 .brand-mark, .empty-logo { display: grid; place-items: center; background: var(--ink); color: #fff; border-radius: 10px; }
 .brand-mark { width: 36px; height: 36px; }
@@ -35,7 +35,7 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .new-review svg { width: 17px; }
 .new-review kbd { margin-left: auto; font-size: 11px; color: #99958e; background: transparent; }
 .history-label { margin: 28px 9px 10px; color: #918d85; font-weight: 650; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
-.history-list { overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+.history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
 .history-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; border-radius: 9px; }
 .history-row:hover, .history-row.active { background: rgba(255,255,255,.62); }
 .history-item { width: 100%; border: 0; background: transparent; text-align: left; border-radius: 9px; padding: 10px; cursor: pointer; min-width: 0; }
@@ -47,7 +47,7 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .history-status { width: 6px; height: 6px; border-radius: 50%; background: #aba69d; display: inline-block; margin-right: 5px; }
 .history-status.completed { background: var(--green); }
 .history-status.running, .history-status.queued { background: var(--accent); box-shadow: 0 0 0 3px rgba(185,87,61,.12); }
-.sidebar-bottom { margin-top: auto; border-top: 1px solid #d8d4cb; padding-top: 15px; }
+.sidebar-bottom { flex: 0 0 auto; margin-top: auto; border-top: 1px solid #d8d4cb; padding-top: 15px; }
 .model-pill { display: flex; align-items: center; gap: 8px; padding: 9px; color: var(--muted); font-size: 12px; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #aaa; }
 .status-dot.online { background: #4b8f71; box-shadow: 0 0 0 3px rgba(75,143,113,.12); }
