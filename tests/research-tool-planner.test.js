@@ -7,7 +7,26 @@ test("biotech academic teams automatically use clinical and scholar research too
     companyProfile: { sector: "生物医药" },
     claims: [{ statement: "教授团队开发 siRNA 药物", verificationNeed: "核查论文和临床管线" }]
   });
-  assert.deepEqual(tools, ["general_web_search", "clinical_trials_search", "google_scholar_search"]);
+  assert.deepEqual(tools, ["general_web_search", "clinical_trials_search", "scholarly_works_search", "openalex_research_search"]);
+});
+
+test("software and AI reviews use public repository and model asset tools", () => {
+  const tools = planReviewResearchTools({
+    companyProfile: { sector: "AI 软件" },
+    claims: [{ statement: "团队发布大模型和开源代码", verificationNeed: "核查 GitHub 与 Hugging Face 资产" }]
+  });
+  assert.ok(tools.includes("github_repository_search"));
+  assert.ok(tools.includes("huggingface_asset_search"));
+});
+
+test("security, US filing and EU procurement claims select their zero-key registries", () => {
+  const tools = planReviewResearchTools({
+    companyProfile: { sector: "美股 AI 软件" },
+    claims: [{ statement: "产品曾涉及 CVE 漏洞，并进入欧盟采购中标名单", verificationNeed: "核对 SEC 10-K、NVD 和 TED 公告" }]
+  });
+  assert.ok(tools.includes("software_vulnerability_search"));
+  assert.ok(tools.includes("sec_filing_search"));
+  assert.ok(tools.includes("procurement_notice_search"));
 });
 
 test("ordinary commercial reviews retain general web search", () => {

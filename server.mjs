@@ -13,6 +13,7 @@ import { createBrowserSessionService } from "./src/infra/browser-session-service
 import { createDocumentExtractionService } from "./src/infra/document-extraction-service.js";
 import { createPdfReportService } from "./src/infra/pdf-report-service.js";
 import { createPdfOcrService } from "./src/infra/pdf-ocr-service.js";
+import { createStructuredResearchToolService } from "./src/infra/research-tools/structured-research-tool-service.js";
 import { sanitizeVisibleFilename } from "./public/privacy-redaction.js";
 import { createFileReviewRepository } from "./src/storage/file-review-repository.js";
 
@@ -20,7 +21,8 @@ loadEnvFile();
 const config = getRuntimeConfig();
 const repository = createFileReviewRepository({ dataDir: config.dataDir });
 await repository.initialize();
-const model = createDeepSeekModelService({ config: config.model });
+const researchTools = createStructuredResearchToolService({ credentials: config.researchTools });
+const model = createDeepSeekModelService({ config: config.model, researchTools });
 const pdfOcrService = createPdfOcrService();
 const extractor = createDocumentExtractionService({ maxBytes: config.maxUploadBytes, pdfOcrService });
 const companyIdentity = createCompanyIdentityService({ extractor, model });
@@ -49,7 +51,9 @@ async function route(req, res) {
       ok: true,
       model: config.model.model,
       modelConfigured: Boolean(config.model.apiKey),
-      webResearchEnabled: config.webResearchEnabled
+      webResearchEnabled: config.webResearchEnabled,
+      zeroKeyResearchTools: researchTools.zeroKeyNames(),
+      keyedResearchTools: researchTools.keyedStatus()
     });
   }
   if (req.method === "GET" && url.pathname === "/api/reviews") {

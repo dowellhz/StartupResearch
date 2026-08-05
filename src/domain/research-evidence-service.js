@@ -34,7 +34,8 @@ export function normalizeEvidenceSources(sources = []) {
       conflicts: normalizeClaimIds(raw.conflicts),
       publishedAt: cleanText(raw.publishedAt || raw.pageAge || raw.date, 100),
       sourceTier: normalizeSourceTier(raw.sourceTier) || classifySourceTier(url),
-      retrievedAt: cleanText(raw.retrievedAt, 100)
+      retrievedAt: cleanText(raw.retrievedAt, 100),
+      provider: cleanText(raw.provider, 100)
     };
     const existing = byUrl.get(url);
     byUrl.set(url, existing ? mergeSource(existing, next) : next);
@@ -131,7 +132,8 @@ function mergeSource(left, right) {
     conflicts: Array.from(new Set([...left.conflicts, ...right.conflicts])),
     publishedAt: left.publishedAt || right.publishedAt,
     sourceTier: strongerTier(left.sourceTier, right.sourceTier),
-    retrievedAt: left.retrievedAt || right.retrievedAt
+    retrievedAt: left.retrievedAt || right.retrievedAt,
+    provider: left.provider || right.provider
   };
 }
 

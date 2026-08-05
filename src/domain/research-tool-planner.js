@@ -1,5 +1,4 @@
-const CLINICAL_PATTERN = /生物医药|制药|药物|抗体|小分子|siRNA|核酸|临床|适应症|IND|PCC|肿瘤|代谢疾病/i;
-const SCHOLAR_PATTERN = /教授|博士|院士|高校|大学|研究院|论文|学术|科研|课题|实验室|专利发明人/i;
+import { planStructuredResearchTools } from "./research-tool-catalog.js";
 
 const VERIFICATION_PACKS = [
   { id: "corporate", label: "工商与主体", pattern: /公司|主体|工商|成立|股东|融资|注册/i, sourcePriorities: ["国家企业信用信息公示系统", "交易所或监管披露", "公司官网"] },
@@ -19,10 +18,7 @@ export function planReviewResearchTools(analysis = {}) {
     analysis.companyProfile?.oneLiner,
     ...claims.flatMap((claim) => [claim.domain, claim.statement, claim.verificationNeed])
   ].filter(Boolean).join(" ");
-  const tools = ["general_web_search"];
-  if (CLINICAL_PATTERN.test(material)) tools.push("clinical_trials_search");
-  if (SCHOLAR_PATTERN.test(material)) tools.push("google_scholar_search");
-  return tools;
+  return ["general_web_search", ...planStructuredResearchTools(material)];
 }
 
 export function buildReviewResearchPlan(analysis = {}, { companyName = "", maxQueries = 8, maxClaims = 16 } = {}) {

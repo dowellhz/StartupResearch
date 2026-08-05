@@ -6,6 +6,7 @@ data/uploads/*
 data/pdfs/
 data/deleted-conversations/
 tmp/
+output/
 !data/jobs/.gitkeep
 !data/reports/.gitkeep
 !data/uploads/.gitkeep

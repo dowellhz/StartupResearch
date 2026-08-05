@@ -11,7 +11,8 @@
     "check:syntax": "node --check server.mjs && find src public tests -type f -name '*.js' -exec node --check {} +",
     "lint": "node scripts/check-source-style.mjs",
     "test": "node --test tests/*.test.js",
-    "check": "npm run check:syntax && npm run lint && npm test"
+    "check": "npm run check:syntax && npm run lint && npm test",
+    "deploy:remote": "./scripts/deploy-remote.sh"
   },
   "engines": {
     "node": ">=22"

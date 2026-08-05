@@ -11,6 +11,7 @@ import {
   planAgenticSearchToolCalls,
   uncoveredTeamSearchQueries
 } from "../src/infra/deepseek-model-service.js";
+import { buildSecWebFallbackQueries } from "../src/domain/research-tool-fallback.js";
 
 test("clinical trial research adds a ClinicalTrials.gov Agentic Search query", () => {
   const queries = buildAgenticSearchQueries({
@@ -35,12 +36,12 @@ test("Google Scholar profile becomes a dedicated Scholar tool query", () => {
   assert.match(queries[0], /SLyWFgYAAAAJ/);
 });
 
-test("Agentic Search can plan both specialized tool calls", () => {
+test("Agentic Search plans clinical, Crossref and OpenAlex tool calls", () => {
   const calls = planAgenticSearchToolCalls("核查 NCT04280705，并核对负责人 Google Scholar 学者主页");
-  assert.deepEqual(calls.map((call) => call.name), ["clinical_trials_search", "google_scholar_search"]);
+  assert.deepEqual(calls.map((call) => call.name), ["clinical_trials_search", "scholarly_works_search", "openalex_research_search"]);
 });
 
-test("Agentic Search dispatches both specialized tool calls", async () => {
+test("Agentic Search dispatches all planned academic tool calls", async () => {
   let requestCount = 0;
   const fetchImpl = async () => {
     requestCount += 1;
@@ -59,9 +60,101 @@ test("Agentic Search dispatches both specialized tool calls", async () => {
     queries: ["核查 NCT04280705 和负责人 Google Scholar 学者主页"],
     onToolCall: (tool) => calls.push(tool.name)
   });
-  assert.deepEqual(calls, ["clinical_trials_search", "google_scholar_search"]);
-  assert.equal(requestCount, 2);
-  assert.equal(sources.length, 2);
+  assert.deepEqual(calls, ["clinical_trials_search", "scholarly_works_search", "openalex_research_search"]);
+  assert.equal(requestCount, 3);
+  assert.equal(sources.length, 3);
+});
+
+test("a failed structured tool is visible while successful search evidence is retained", async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ content: [{
+    type: "text",
+    text: JSON.stringify([{ title: "Public source", url: "https://example.com/source", snippet: "usable evidence" }])
+  }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  const researchTools = {
+    has: () => true,
+    run: async () => { throw new Error("upstream unavailable"); }
+  };
+  const model = createDeepSeekModelService({
+    config: { apiKey: "test-key", baseUrl: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", timeoutMs: 1000 },
+    fetchImpl,
+    researchTools
+  });
+  const events = [];
+  const sources = await model.webSearch({
+    companyName: "Example Bio",
+    queries: ["clinical trial"],
+    requestedTools: ["general_web_search", "clinical_trials_search"],
+    onToolCall: (tool) => events.push(tool)
+  });
+  assert.equal(sources.length, 1);
+  assert.ok(events.some((tool) => tool.name === "clinical_trials_search" && tool.status === "failed"));
+});
+
+test("a keyed research tool is skipped without making a request when credentials are absent", async () => {
+  let fetchCalled = false;
+  const model = createDeepSeekModelService({
+    config: { apiKey: "test-key", baseUrl: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", timeoutMs: 1000 },
+    fetchImpl: async () => { fetchCalled = true; return new Response("{}"); },
+    researchTools: { has: () => false }
+  });
+  const events = [];
+  const sources = await model.webSearch({
+    companyName: "Example Lab",
+    requestedTools: ["openalex_research_search"],
+    onToolCall: (tool) => events.push(tool)
+  });
+  assert.deepEqual(sources, []);
+  assert.equal(fetchCalled, false);
+  assert.ok(events.some((tool) => tool.name === "openalex_research_search" && tool.status === "skipped"));
+});
+
+test("SEC API failure falls back to a scoped Web Research query and marks its sources", async () => {
+  let requestBody;
+  const fetchImpl = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return new Response(JSON.stringify({ content: [{
+      type: "text",
+      text: JSON.stringify([{ title: "Apple 10-K", url: "https://www.sec.gov/Archives/edgar/data/320193/example.htm", snippet: "Form 10-K filing" }])
+    }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const researchTools = { has: () => true, run: async () => ({ ok: false, error: "SEC HTTP 403" }) };
+  const model = createDeepSeekModelService({
+    config: { apiKey: "test-key", baseUrl: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", timeoutMs: 1000 },
+    fetchImpl,
+    researchTools
+  });
+  const events = [];
+  const sources = await model.webSearch({
+    companyName: "Apple Inc.",
+    queries: ["Apple SEC 10-K revenue"],
+    requestedTools: ["sec_filing_search"],
+    onToolCall: (tool) => events.push(tool)
+  });
+  assert.equal(sources.length, 1);
+  assert.match(sources[0].provider, /SEC API 降级/);
+  assert.match(requestBody.messages[0].content, /site:sec\.gov\/Archives\/edgar\/data/);
+  assert.ok(events.some((tool) => tool.status === "fallback"));
+  assert.deepEqual(buildSecWebFallbackQueries({ companyName: "Apple", queries: ["Apple SEC 10-K"] }), [
+    "Apple site:sec.gov/Archives/edgar/data 10-K 10-Q 8-K 20-F",
+    "site:sec.gov Apple SEC 10-K"
+  ]);
+});
+
+test("SEC fallback still fails visibly when Web Research is unavailable", async () => {
+  const fetchImpl = async () => new Response("unavailable", { status: 400 });
+  const researchTools = { has: () => true, run: async () => ({ ok: false, error: "SEC HTTP 403" }) };
+  const model = createDeepSeekModelService({
+    config: { apiKey: "test-key", baseUrl: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", timeoutMs: 1000 },
+    fetchImpl,
+    researchTools
+  });
+  const events = [];
+  await assert.rejects(model.webSearch({
+    companyName: "Apple",
+    requestedTools: ["sec_filing_search"],
+    onToolCall: (tool) => events.push(tool)
+  }), /SEC HTTP 403/);
+  assert.ok(events.some((tool) => tool.status === "failed" && /Web Research/.test(tool.label)));
 });
 
 test("Agentic Search preserves cited text and claim links from tool results", () => {

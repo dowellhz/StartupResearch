@@ -30,6 +30,9 @@ export function getRuntimeConfig(env = process.env) {
       model: String(env.DEEPSEEK_MODEL || "deepseek-chat").trim(),
       timeoutMs: positiveNumber(env.DEEPSEEK_TIMEOUT_MS, 120000)
     },
+    researchTools: {
+      openAlexApiKey: String(env.OPENALEX_API_KEY || "").trim()
+    },
     webResearchEnabled: String(env.WEB_RESEARCH_ENABLED ?? "true").toLowerCase() !== "false"
   };
 }

@@ -5,12 +5,13 @@ import { buildEvidenceAssessment, classifySourceTier, normalizeEvidenceSources }
 test("evidence sources merge duplicate URLs and preserve richer cited text", () => {
   const sources = normalizeEvidenceSources([
     { title: "Example", url: "https://clinicaltrials.gov/study/NCT00000001", snippet: "" },
-    { title: "Official trial", url: "https://clinicaltrials.gov/study/NCT00000001", citedText: "The trial is recruiting participants.", supports: ["claim_1"] }
+    { title: "Official trial", url: "https://clinicaltrials.gov/study/NCT00000001", citedText: "The trial is recruiting participants.", supports: ["claim_1"], provider: "ClinicalTrials.gov" }
   ]);
   assert.equal(sources.length, 1);
   assert.match(sources[0].snippet, /recruiting/);
   assert.deepEqual(sources[0].supports, ["claim_1"]);
   assert.equal(sources[0].sourceTier, "primary");
+  assert.equal(sources[0].provider, "ClinicalTrials.gov");
 });
 
 test("evidence assessment reports claim coverage instead of counting URLs", () => {

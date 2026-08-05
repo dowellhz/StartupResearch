@@ -348,7 +348,15 @@ function buildRefreshReport(result) {
 }
 
 function compactSource(source) {
-  return { id: source.id, title: text(source.title, 250), url: text(source.url, 1500), snippet: text(source.snippet, 700), publishedAt: source.publishedAt, sourceTier: source.sourceTier };
+  return {
+    id: source.id,
+    title: text(source.title, 250),
+    url: text(source.url, 1500),
+    snippet: text(source.snippet, 700),
+    publishedAt: source.publishedAt,
+    sourceTier: source.sourceTier,
+    provider: text(source.provider, 100)
+  };
 }
 
 function sourceLink(source) {
