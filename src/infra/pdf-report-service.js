@@ -73,6 +73,7 @@ function renderStageSummary(doc, stages = []) {
   const width = pageContentWidth(doc) - 31;
   const top = doc.y;
   const completed = stages.filter((stage) => ["completed", "restored"].includes(stage.status)).length;
+  drawCardShadow(doc, left, top, width, 38, 8);
   doc.save().roundedRect(left, top, width, 38, 8).fillAndStroke("#fffefb", "#dedad1").restore();
   setPdfFont(doc, { role: "sans", bold: true });
   doc.fillColor("#20201d").fontSize(10.5).text("研究执行记录", left + 13, top + 10, { width: width - 100 });
@@ -89,6 +90,7 @@ function renderConversationReport(doc, conversation) {
   const left = doc.page.margins.left + 31;
   const width = pageContentWidth(doc) - 31;
   const top = doc.y;
+  drawCardShadow(doc, left, top, width, 46, 8);
   doc.save().roundedRect(left, top, width, 46, 8).fillAndStroke("#f2eee7", "#dedad1").restore();
   setPdfFont(doc, { role: "sans", bold: true });
   doc.fillColor("#b9573d").fontSize(7.5).text(
@@ -166,6 +168,7 @@ function renderBubble(doc, text, { fill, textColor, widthRatio }) {
   }
   ensureSpace(doc, height + 8);
   const top = doc.y;
+  drawCardShadow(doc, left, top, width, height, 5);
   doc.save().roundedRect(left, top, width, height, 5).fill(fill).restore();
   doc.fillColor(textColor).text(cleanMarkdown(text), left + 12, top + 10, { width: width - 24, lineGap: 4 });
   doc.x = doc.page.margins.left;
@@ -174,6 +177,21 @@ function renderBubble(doc, text, { fill, textColor, widthRatio }) {
 
 function pageContentWidth(doc) {
   return doc.page.width - doc.page.margins.left - doc.page.margins.right;
+}
+
+function drawCardShadow(doc, x, y, width, height, radius) {
+  const layers = [
+    { offsetY: 2, spread: 0.5, opacity: 0.035 },
+    { offsetY: 4, spread: 1.5, opacity: 0.025 },
+    { offsetY: 7, spread: 3, opacity: 0.015 }
+  ];
+  for (const layer of layers) {
+    doc.save()
+      .fillOpacity(layer.opacity)
+      .roundedRect(x - layer.spread, y + layer.offsetY, width + layer.spread * 2, height + layer.spread, radius + layer.spread)
+      .fill("#2e2a22")
+      .restore();
+  }
 }
 
 function renderMarkdownDocument(doc, markdown, title) {
