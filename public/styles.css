@@ -226,6 +226,17 @@ dialog::backdrop { background: rgba(30,29,26,.35); backdrop-filter: blur(3px); }
 dialog h2 { font: 600 24px Georgia, "Songti SC", serif; margin: 0 0 15px; }
 dialog p:not(.eyebrow) { color: var(--muted); font-size: 14px; line-height: 1.8; }
 .dialog-close { position: absolute; top: 10px; right: 12px; border: 0; background: transparent; font-size: 22px; cursor: pointer; }
+.confirmation-dialog { width: min(420px, calc(100% - 32px)); padding: 0; overflow: hidden; }
+.confirmation-dialog form { padding: 30px; text-align: center; }
+.confirmation-dialog .confirmation-icon { width: 46px; height: 46px; margin: 0 auto 18px; display: grid; place-items: center; border-radius: 13px; background: #f1dfd8; color: var(--accent-dark); font: 800 14px Georgia, "Songti SC", serif; box-shadow: 0 8px 22px rgba(87,39,28,.12); }
+.confirmation-dialog h2 { margin-bottom: 8px; }
+.confirmation-dialog p:not(.eyebrow) { margin: 0 auto; max-width: 310px; }
+.dialog-actions { display: flex; justify-content: center; gap: 10px; margin-top: 26px; }
+.dialog-actions button { min-height: 40px; border-radius: 10px; padding: 0 17px; font-weight: 650; cursor: pointer; transition: .18s ease; }
+.dialog-secondary { border: 1px solid #d5cfc5; background: transparent; color: #625f59; }
+.dialog-secondary:hover { border-color: #bdb5aa; background: #f4f1eb; }
+.dialog-primary { border: 1px solid var(--ink); background: var(--ink); color: #fff; }
+.dialog-primary:hover { border-color: var(--accent-dark); background: var(--accent-dark); transform: translateY(-1px); }
 .toast-region { position: fixed; right: 20px; top: 75px; z-index: 20; }
 .toast { background: #262521; color: #fff; padding: 11px 14px; border-radius: 9px; font-size: 13px; box-shadow: var(--shadow); margin-bottom: 8px; animation: rise .2s; max-width: 340px; }
 
@@ -244,4 +255,7 @@ dialog p:not(.eyebrow) { color: var(--muted); font-size: 14px; line-height: 1.8;
   .report-footer { align-items: flex-end; flex-direction: row; }
   .composer-wrap { padding-inline: 10px; }
   .companyInput { max-width: 120px; }
+  .confirmation-dialog form { padding: 26px 20px 20px; }
+  .dialog-actions { flex-direction: column-reverse; }
+  .dialog-actions button { width: 100%; }
 }

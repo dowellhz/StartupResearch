@@ -1,8 +1,9 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
 import { bindComposerInput } from "./composer-keyboard.js";
 import { createComposerDraftController, lastUserInput } from "./composer-draft.js";
-import { ATTACHMENT_SUBMISSION, CANCEL_SUBMISSION, COMPANY_RESEARCH_SUBMISSION, decideComposerSubmission, FOLLOWUP_SUBMISSION } from "./composer-submit-route.js";
+import { ATTACHMENT_SUBMISSION, CANCEL_SUBMISSION, COMPANY_RESEARCH_SUBMISSION, CONFIRM_COMPANY_RESEARCH_SUBMISSION, decideComposerSubmission, FOLLOWUP_SUBMISSION } from "./composer-submit-route.js";
 import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, createComposerTaskModeController } from "./composer-task-mode.js";
+import { createConfirmationDialogController } from "./confirmation-dialog.js";
 import { bindFileDrop } from "./file-drop.js";
 import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evidence-refresh-ui.js";
 import { renderFollowupSuggestions } from "./followup-suggestions.js";
@@ -44,6 +45,7 @@ const elements = {
   modelDot: document.querySelector("#modelDot"),
   modelText: document.querySelector("#modelText"),
   newReviewButton: document.querySelector("#newReviewButton"),
+  noAttachmentDialog: document.querySelector("#noAttachmentDialog"),
   promptInput: document.querySelector("#promptInput"),
   removeFile: document.querySelector("#removeFile"),
   researchPreview: document.querySelector("#researchPreview"),
@@ -68,6 +70,7 @@ const state = {
   taskType: ATTACHMENT_REVIEW
 };
 const taskMode = createComposerTaskModeController({ elements, state, clearAttachment: clearFile });
+const noAttachmentConfirmation = createConfirmationDialogController({ dialog: elements.noAttachmentDialog });
 const evidenceRefreshController = createEvidenceRefreshController({ state, container: elements.messageStream, requestJson,
   connectEvents, notify: toast, scrollBottom, refreshHistory: loadHistory });
 boot();
@@ -155,12 +158,15 @@ function clearFile() {
 async function submitComposer(event) {
   event.preventDefault();
   const prompt = elements.promptInput.value.trim();
-  const submission = decideComposerSubmission({
+  let submission = decideComposerSubmission({
     taskType: state.taskType,
     hasCurrentReport: Boolean(state.currentReview?.reportAvailable),
-    hasFile: Boolean(state.file),
-    confirmImpl: window.confirm.bind(window)
+    hasFile: Boolean(state.file)
   });
+  if (submission === CONFIRM_COMPANY_RESEARCH_SUBMISSION) {
+    const confirmed = await noAttachmentConfirmation.request();
+    submission = confirmed ? COMPANY_RESEARCH_SUBMISSION : CANCEL_SUBMISSION;
+  }
   if (submission === CANCEL_SUBMISSION) return;
   if (submission === FOLLOWUP_SUBMISSION) return askFollowup(prompt);
   if (submission === COMPANY_RESEARCH_SUBMISSION) {

@@ -99,6 +99,18 @@
     <p>支持 PDF、PPTX、DOCX、TXT 和 Markdown，默认最大 20 MB。</p>
     <p>无需登录。系统使用长期匿名浏览器 Cookie 隔离任务，同一浏览器再次打开仍能看到自己的历史、报告与聊天；清除 Cookie、使用无痕模式或更换浏览器后会成为新的匿名用户。</p>
   </dialog>
+  <dialog class="confirmation-dialog" id="noAttachmentDialog" aria-labelledby="noAttachmentDialogTitle" aria-describedby="noAttachmentDialogDescription">
+    <form method="dialog">
+      <div class="confirmation-icon" aria-hidden="true">研</div>
+      <p class="eyebrow">COMPANY PRE-RESEARCH</p>
+      <h2 id="noAttachmentDialogTitle">未添加附件</h2>
+      <p id="noAttachmentDialogDescription">是否直接抓取公司公开信息，开始公司预研？</p>
+      <div class="dialog-actions">
+        <button class="dialog-secondary" type="submit" value="cancel">返回添加附件</button>
+        <button class="dialog-primary" type="submit" value="confirm">开始公司预研</button>
+      </div>
+    </form>
+  </dialog>
   <div class="toast-region" id="toastRegion"></div>
   <script type="module" src="/app.js"></script>
 </body>
