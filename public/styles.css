@@ -96,6 +96,7 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 
 .message-stream { width: min(850px, calc(100% - 42px)); margin: 0 auto; padding: 38px 0 40px; }
 .message { margin-bottom: 30px; animation: rise .3s ease both; }
+.message[tabindex="-1"]:focus { outline: none; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 .message-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 9px; font-weight: 650; text-transform: uppercase; letter-spacing: .08em; }
 .avatar { width: 25px; height: 25px; border-radius: 7px; display: grid; place-items: center; background: var(--ink); color: #fff; font: 700 11px Georgia, serif; }

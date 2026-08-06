@@ -1,6 +1,6 @@
 import { LANGUAGE_EN, getLanguage } from "./i18n.js";
 
-export function createReanalyzeController({ state, requestJson, renderProgress, connectEvents, notify, labelFor, confirmImpl = globalThis.confirm, disableButton = () => {} } = {}) {
+export function createReanalyzeController({ state, requestJson, renderProgress, focusResearchStart = () => {}, connectEvents, notify, labelFor, confirmImpl = globalThis.confirm, disableButton = () => {} } = {}) {
   return async function reanalyzeCurrentReview() {
     const taskType = state.currentReview?.taskType || "attachment_review";
     const message = confirmationMessage(taskType);
@@ -14,8 +14,10 @@ export function createReanalyzeController({ state, requestJson, renderProgress, 
       state.currentReview = payload.review;
       state.stages = payload.review.stages || [];
       state.report = "";
+      state.autoFollow = false;
       disableButton();
       renderProgress();
+      focusResearchStart();
       connectEvents(state.currentId);
       notify(getLanguage() === LANGUAGE_EN ? `${labelFor(taskType).rerun} started; the previous report was archived` : `${labelFor(taskType).rerun}已开始，旧报告已归档`);
     } catch (error) {

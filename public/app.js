@@ -22,6 +22,7 @@ import { progressStageCopy } from "./progress-stage-copy.js";
 import { renderQualitySummary } from "./quality-summary.js";
 import { createReanalyzeController } from "./reanalyze-controller.js";
 import { createResearchSubmissionController } from "./research-submission-controller.js";
+import { focusResearchStart } from "./research-view-focus.js";
 import { runFollowup } from "./followup-controller.js";
 import { renderStreamingMarkdown, STREAM_RENDER_INTERVAL } from "./streaming-markdown.js";
 import { localizedReviewTitle, supportsEvidenceRefresh, taskTypeLabels } from "./task-type-labels.js";
@@ -94,9 +95,9 @@ const noAttachmentConfirmation = createConfirmationDialogController({ dialog: el
 const evidenceRefreshController = createEvidenceRefreshController({ state, container: elements.messageStream, requestJson,
   connectEvents, notify: toast, scrollBottom, refreshHistory: loadHistory });
 const researchSubmission = createResearchSubmissionController({ elements, state, taskMode, requestJson, draft, setBusy, notify: toast,
-  showConversation, renderProgressPanel, connectEvents, loadHistory, clearFile });
+  showConversation, renderProgressPanel, focusCurrentResearchStart, connectEvents, loadHistory, clearFile });
 const reanalyzeCurrentReview = createReanalyzeController({ state, requestJson, renderProgress: renderProgressPanel, connectEvents,
-  notify: toast, labelFor: taskTypeLabels, confirmImpl: window.confirm.bind(window), disableButton: () => document.querySelector("[data-reanalyze]")?.setAttribute("disabled", "") });
+  focusResearchStart: focusCurrentResearchStart, notify: toast, labelFor: taskTypeLabels, confirmImpl: window.confirm.bind(window), disableButton: () => document.querySelector("[data-reanalyze]")?.setAttribute("disabled", "") });
 boot();
 
 async function boot() {
@@ -221,7 +222,9 @@ async function submitComposer(event) {
     renderReviewRequest(elements.messageStream, { company: payload.review.companyName || payload.decision?.newCompanyName || companyName, prompt: prompt || t("instruction.material", { zh: "全面核查这份材料" }), file, taskType: ATTACHMENT_REVIEW });
     draft.clearCompany();
     draft.clearPrompt();
+    state.autoFollow = false;
     renderProgressPanel();
+    focusCurrentResearchStart();
     elements.conversationTitle.textContent = localizedReviewTitle(payload.review);
     draft.save();
     clearFile();
@@ -378,6 +381,11 @@ function renderProgressPanel() {
     : t("progress.taskRunning", { zh: `${taskLabel}进行中`, task: taskLabel });
   panel.querySelector(".progress-badge").textContent = state.currentReview?.reportAvailable ? "DONE" : "LIVE";
   scrollBottom();
+}
+
+function focusCurrentResearchStart() {
+  state.autoFollow = false;
+  focusResearchStart({ conversation: elements.conversation, progressPanel: document.querySelector("#progressMessage") });
 }
 
 function ensureReportCard(streaming) {

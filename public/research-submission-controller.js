@@ -5,7 +5,7 @@ import { getLanguage, t } from "./i18n.js";
 import { localizedReviewTitle } from "./task-type-labels.js";
 
 export function createResearchSubmissionController(deps) {
-  const { elements, state, taskMode, requestJson, draft, setBusy, notify, showConversation, renderProgressPanel, connectEvents, loadHistory, clearFile } = deps;
+  const { elements, state, taskMode, requestJson, draft, setBusy, notify, showConversation, renderProgressPanel, focusResearchStart = () => {}, connectEvents, loadHistory, clearFile } = deps;
 
   async function start(taskType, prompt) {
     const subject = elements.companyInput.value.trim();
@@ -20,7 +20,9 @@ export function createResearchSubmissionController(deps) {
       showConversation();
       elements.messageStream.innerHTML = "";
       renderReviewRequest(elements.messageStream, { company: subject || payload.review.companyName, prompt: instruction, file: state.file, taskType });
+      state.autoFollow = false;
       renderProgressPanel();
+      focusResearchStart();
       elements.conversationTitle.textContent = localizedReviewTitle(payload.review);
       draft.clearCompany();
       draft.clearPrompt();
