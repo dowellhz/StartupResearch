@@ -14,38 +14,38 @@
         <div class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 36 36"><path d="M8 7.5h8.5L28 28.5h-8.2L8 7.5Z"/><path d="M22 7.5h6L17.2 27h-6L22 7.5Z"/></svg>
         </div>
-        <div><strong>VentureLens</strong><span>投资研究工作台</span></div>
+        <div><strong>VentureLens</strong><span data-i18n="brand.subtitle">投资研究工作台</span></div>
       </div>
       <div class="new-task-actions" aria-label="新建研究任务">
         <button class="new-review" id="newReviewButton">
           <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-          新建 BP 核查
+          <span data-i18n="sidebar.newBp">新建 BP 核查</span>
           <kbd>⌘ K</kbd>
         </button>
         <button class="new-research-task" id="newIndustryResearchButton" type="button">
-          <span>行</span><strong>行业研究</strong><small>公开资料与论文</small>
+          <span>行</span><strong data-i18n="sidebar.industry">行业研究</strong><small data-i18n="sidebar.industrySub">公开资料与论文</small>
         </button>
         <button class="new-research-task" id="newPaperAnalysisButton" type="button">
-          <span>论</span><strong>论文解读</strong><small>PDF 或论文 URL</small>
+          <span>论</span><strong data-i18n="sidebar.paper">论文解读</strong><small data-i18n="sidebar.paperSub">PDF 或论文 URL</small>
         </button>
       </div>
-      <div class="history-label">最近核查</div>
-      <nav class="history-list" id="historyList" aria-label="历史核查"></nav>
+      <div class="history-label" data-i18n="sidebar.recent">最近核查</div>
+      <nav class="history-list" id="historyList" aria-label="历史核查" data-i18n-aria-label="sidebar.history"></nav>
       <div class="sidebar-bottom">
-        <div class="model-pill"><span class="status-dot" id="modelDot"></span><span id="modelText">检查 DeepSeek…</span></div>
-        <button class="sidebar-link" id="helpButton"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.5 2.5 0 0 1 4.8 1c0 1.8-2.5 2-2.5 3.5M12 17h.01"/></svg>核查说明</button>
+        <div class="model-pill"><span class="status-dot" id="modelDot"></span><span id="modelText" data-i18n="health.checking">检查 DeepSeek…</span></div>
+        <div class="sidebar-utility-row"><button class="sidebar-link" id="helpButton"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.5 2.5 0 0 1 4.8 1c0 1.8-2.5 2-2.5 3.5M12 17h.01"/></svg><span data-i18n="sidebar.help">核查说明</span></button><button class="language-toggle" id="languageToggle" type="button">EN</button></div>
       </div>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
-        <button class="icon-button mobile-menu" id="menuButton" aria-label="打开菜单"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-        <div class="conversation-title" id="conversationTitle">新建 BP 核查</div>
+        <button class="icon-button mobile-menu" id="menuButton" aria-label="打开菜单" data-i18n-aria-label="top.menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <div class="conversation-title" id="conversationTitle" data-i18n="top.newBp">新建 BP 核查</div>
         <div class="top-actions">
-          <button class="top-pdf-download" id="conversationPdfButton" type="button" title="下载完整对话 PDF" aria-label="下载完整对话 PDF" disabled>
+          <button class="top-pdf-download" id="conversationPdfButton" type="button" title="下载完整对话 PDF" aria-label="下载完整对话 PDF" data-i18n-title="top.download" data-i18n-aria-label="top.download" disabled>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4"/><path d="M8.5 15.5h7M8.5 18h5"/></svg><span>PDF</span>
           </button>
-          <span class="secure-label"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/></svg>匿名浏览器隔离</span>
+          <span class="secure-label"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/></svg><span data-i18n="top.secure">匿名浏览器隔离</span></span>
         </div>
       </header>
 
@@ -54,10 +54,10 @@
           <div class="empty-orbit">
             <div class="empty-logo"><svg viewBox="0 0 36 36"><path d="M8 7.5h8.5L28 28.5h-8.2L8 7.5Z"/><path d="M22 7.5h6L17.2 27h-6L22 7.5Z"/></svg></div>
           </div>
-          <p class="eyebrow">BP DUE DILIGENCE COPILOT</p>
-          <h1>把商业计划书交给我，<br><em>从声明到证据逐项核查。</em></h1>
-          <p class="empty-copy">上传 BP 即可开始，公司名称可选填。系统会从材料中识别公司，梳理商业逻辑、核查公开信息、标记风险，并生成可下载的投资研究报告。</p>
-          <div class="suggestions">
+          <p class="eyebrow" id="emptyEyebrow">BP DUE DILIGENCE COPILOT</p>
+          <h1 id="emptyHeading">把商业计划书交给我，<br><em>从声明到证据逐项核查。</em></h1>
+          <p class="empty-copy" id="emptyCopy">上传 BP 即可开始，公司名称可选填。系统会从材料中识别公司，梳理商业逻辑、核查公开信息、标记风险，并生成可下载的投资研究报告。</p>
+          <div class="suggestions" id="emptySuggestions">
             <button data-suggestion="重点核查团队履历、客户真实性和收入数据"><span>01</span>团队、客户与收入</button>
             <button data-suggestion="重点核查市场规模测算、竞争格局和产品壁垒"><span>02</span>市场与竞争壁垒</button>
             <button data-suggestion="站在 A 轮投资人角度，全面核查这份 BP"><span>03</span>A 轮投资视角</button>
@@ -74,40 +74,40 @@
         </div>
         <div class="research-preview hidden" id="researchPreview">
           <div class="research-icon">研</div>
-          <div><strong>公司预研</strong><span>无需附件，将抓取公司公开信息</span></div>
+          <div><strong data-i18n="preview.company">公司预研</strong><span data-i18n="preview.companySub">无需附件，将抓取公司公开信息</span></div>
           <button id="exitResearchMode" type="button" aria-label="退出公司预研">×</button>
         </div>
         <div class="research-preview industry-preview hidden" id="industryResearchPreview">
           <div class="research-icon">行</div>
-          <div><strong>行业研究</strong><span>公开资料、论文、技术与投资视角</span></div>
-          <label>研究类型<select id="industryResearchTemplate"><option value="industry_overview">行业概览</option><option value="technical">技术研究</option><option value="commercial">商业前景</option><option value="investment">投资价值</option></select></label>
+          <div><strong data-i18n="preview.industry">行业研究</strong><span data-i18n="preview.industrySub">公开资料、论文、技术与投资视角</span></div>
+          <label><span data-i18n="preview.researchType">研究类型</span><select id="industryResearchTemplate"><option value="industry_overview" data-i18n="preview.overview">行业概览</option><option value="technical" data-i18n="preview.technical">技术研究</option><option value="commercial" data-i18n="preview.commercial">商业前景</option><option value="investment" data-i18n="preview.investment">投资价值</option></select></label>
           <button id="exitIndustryResearchMode" type="button" aria-label="退出行业研究">×</button>
         </div>
         <div class="research-preview paper-preview hidden" id="paperAnalysisPreview">
           <div class="research-icon">论</div>
-          <div><strong>论文解读</strong><span>上传 PDF 或填写公开论文 URL</span></div>
-          <input id="paperUrlInput" type="url" placeholder="https://arxiv.org/abs/…" aria-label="论文 URL">
-          <button class="paper-upload-button" id="paperUploadButton" type="button">上传 PDF</button>
+          <div><strong data-i18n="preview.paper">论文解读</strong><span data-i18n="preview.paperSub">上传 PDF 或填写公开论文 URL</span></div>
+          <input id="paperUrlInput" type="url" placeholder="https://arxiv.org/abs/…" aria-label="论文 URL" data-i18n-aria-label="preview.paperUrl">
+          <button class="paper-upload-button" id="paperUploadButton" type="button" data-i18n="preview.uploadPdf">上传 PDF</button>
           <button id="exitPaperAnalysisMode" type="button" aria-label="退出论文解读">×</button>
         </div>
         <form class="composer" id="composer">
           <input id="fileInput" type="file" accept=".pdf,.pptx,.docx,.txt,.md,application/pdf" hidden>
-          <button class="attach-button" id="attachButton" type="button" aria-label="添加内容" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="attach-button" id="attachButton" type="button" aria-label="添加内容" data-i18n-aria-label="menu.add" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
           <div class="add-menu hidden" id="addMenu" role="menu">
             <button id="attachmentOption" type="button" role="menuitem">
-              <span class="add-menu-icon">附</span><span><strong>增加附件</strong><small>待核实的 BP 或其他会议材料</small></span>
+              <span class="add-menu-icon">附</span><span><strong data-i18n="menu.attachment">增加附件</strong><small data-i18n="menu.attachmentSub">待核实的 BP 或其他会议材料</small></span>
             </button>
             <button id="companyResearchOption" type="button" role="menuitem">
-              <span class="add-menu-icon">研</span><span><strong>公司预研</strong><small>无需附件，抓取公司公开信息</small></span>
+              <span class="add-menu-icon">研</span><span><strong data-i18n="menu.company">公司预研</strong><small data-i18n="menu.companySub">无需附件，抓取公司公开信息</small></span>
             </button>
           </div>
           <div class="inputs">
-            <input id="companyInput" placeholder="公司名称（可选，可从 BP 识别）" autocomplete="off">
-            <textarea id="promptInput" rows="1" placeholder="补充核查要求，或在报告完成后继续追问…"></textarea>
+            <input id="companyInput" placeholder="公司名称（可选，可从 BP 识别）" data-i18n-placeholder="composer.companyPlaceholder" autocomplete="off">
+            <textarea id="promptInput" rows="1" placeholder="补充核查要求，或在报告完成后继续追问…" data-i18n-placeholder="composer.promptPlaceholder"></textarea>
           </div>
-          <button class="send-button" id="sendButton" type="submit" aria-label="开始核查"><svg viewBox="0 0 24 24"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg></button>
+          <button class="send-button" id="sendButton" type="submit" aria-label="开始核查" data-i18n-aria-label="composer.send"><svg viewBox="0 0 24 24"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg></button>
         </form>
-        <p class="composer-note" id="composerNote">点击 + 添加附件或发起公司预研，也可把材料拖入输入框 · AI 结论仅供投资研究参考</p>
+        <p class="composer-note" id="composerNote" data-i18n="composer.note">点击 + 添加附件或发起公司预研，也可把材料拖入输入框 · AI 结论仅供投资研究参考</p>
       </footer>
     </main>
   </div>
@@ -115,21 +115,21 @@
   <dialog id="helpDialog">
     <button class="dialog-close" id="closeHelp">×</button>
     <p class="eyebrow">HOW IT WORKS</p>
-    <h2>核查不是复述 BP</h2>
-    <p>系统会把 BP 内容视作待核实的公司自述，区分公开支持、存在冲突、仅 BP 自述、资料不足和分析推断。联网检索失败时仍会保留已有草稿，并明确披露限制。</p>
-    <p>左侧可直接发起行业研究或论文解读。行业研究支持行业概览、技术研究、商业前景和投资价值；论文解读支持上传 PDF 或填写公开论文 URL。</p>
-    <p>支持 PDF、PPTX、DOCX、TXT 和 Markdown，默认最大 20 MB。</p>
-    <p>无需登录。系统使用长期匿名浏览器 Cookie 隔离任务，同一浏览器再次打开仍能看到自己的历史、报告与聊天；清除 Cookie、使用无痕模式或更换浏览器后会成为新的匿名用户。</p>
+    <h2 data-i18n="help.title">核查不是复述 BP</h2>
+    <p data-i18n="help.p1">系统会把 BP 内容视作待核实的公司自述，区分公开支持、存在冲突、仅 BP 自述、资料不足和分析推断。联网检索失败时仍会保留已有草稿，并明确披露限制。</p>
+    <p data-i18n="help.p2">左侧可直接发起行业研究或论文解读。行业研究支持行业概览、技术研究、商业前景和投资价值；论文解读支持上传 PDF 或填写公开论文 URL。</p>
+    <p data-i18n="help.p3">支持 PDF、PPTX、DOCX、TXT 和 Markdown，默认最大 20 MB。</p>
+    <p data-i18n="help.p4">无需登录。系统使用长期匿名浏览器 Cookie 隔离任务，同一浏览器再次打开仍能看到自己的历史、报告与聊天；清除 Cookie、使用无痕模式或更换浏览器后会成为新的匿名用户。</p>
   </dialog>
   <dialog class="confirmation-dialog" id="noAttachmentDialog" aria-labelledby="noAttachmentDialogTitle" aria-describedby="noAttachmentDialogDescription">
     <form method="dialog">
       <div class="confirmation-icon" aria-hidden="true">研</div>
       <p class="eyebrow">COMPANY PRE-RESEARCH</p>
-      <h2 id="noAttachmentDialogTitle">未添加附件</h2>
-      <p id="noAttachmentDialogDescription">是否直接抓取公司公开信息，开始公司预研？</p>
+      <h2 id="noAttachmentDialogTitle" data-i18n="confirm.title">未添加附件</h2>
+      <p id="noAttachmentDialogDescription" data-i18n="confirm.description">是否直接抓取公司公开信息，开始公司预研？</p>
       <div class="dialog-actions">
-        <button class="dialog-secondary" type="submit" value="cancel">返回添加附件</button>
-        <button class="dialog-primary" type="submit" value="confirm">开始公司预研</button>
+        <button class="dialog-secondary" type="submit" value="cancel" data-i18n="confirm.back">返回添加附件</button>
+        <button class="dialog-primary" type="submit" value="confirm" data-i18n="confirm.start">开始公司预研</button>
       </div>
     </form>
   </dialog>

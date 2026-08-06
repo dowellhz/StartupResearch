@@ -9,20 +9,22 @@ import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evid
 import { renderFollowupSuggestions } from "./followup-suggestions.js";
 import { renderHistoryList } from "./history-list.js";
 import { refreshHealthStatus } from "./health-status.js";
+import { applyDocumentTranslations, bindLanguageToggle, t } from "./i18n.js";
 import { requestJson, requestResponse } from "./http-client.js";
 import { downloadConversationPdf, downloadReviewPdf, syncConversationPdfButton } from "./pdf-download.js";
 import { applyDetectedCompany } from "./review-identity.js";
 import { applyRecoverableReport } from "./review-error.js";
 import { applyUploadRouting, fileToBase64, submitUploadedBp } from "./review-submit.js";
-import { formatBytes, renderReviewRequest, stageStatusCopy } from "./review-request-message.js";
+import { formatBytes, renderReviewRequest } from "./review-request-message.js";
 import { enterUploadedBpCompanyContext, restoreCurrentCompanyContext, setUploadAnalysisState } from "./upload-company-context.js";
 import { sanitizeVisibleFilename } from "./privacy-redaction.js";
+import { progressStageCopy } from "./progress-stage-copy.js";
 import { renderQualitySummary } from "./quality-summary.js";
 import { createReanalyzeController } from "./reanalyze-controller.js";
 import { createResearchSubmissionController } from "./research-submission-controller.js";
 import { runFollowup } from "./followup-controller.js";
 import { renderStreamingMarkdown, STREAM_RENDER_INTERVAL } from "./streaming-markdown.js";
-import { supportsEvidenceRefresh, taskTypeLabels } from "./task-type-labels.js";
+import { localizedReviewTitle, supportsEvidenceRefresh, taskTypeLabels } from "./task-type-labels.js";
 const elements = {
   addMenu: document.querySelector("#addMenu"),
   attachButton: document.querySelector("#attachButton"),
@@ -36,6 +38,10 @@ const elements = {
   conversationPdfButton: document.querySelector("#conversationPdfButton"),
   conversationTitle: document.querySelector("#conversationTitle"),
   emptyState: document.querySelector("#emptyState"),
+  emptyCopy: document.querySelector("#emptyCopy"),
+  emptyEyebrow: document.querySelector("#emptyEyebrow"),
+  emptyHeading: document.querySelector("#emptyHeading"),
+  emptySuggestions: document.querySelector("#emptySuggestions"),
   fileInput: document.querySelector("#fileInput"),
   fileMeta: document.querySelector("#fileMeta"),
   fileName: document.querySelector("#fileName"),
@@ -48,6 +54,7 @@ const elements = {
   historyList: document.querySelector("#historyList"),
   industryResearchPreview: document.querySelector("#industryResearchPreview"),
   industryResearchTemplate: document.querySelector("#industryResearchTemplate"),
+  languageToggle: document.querySelector("#languageToggle"),
   menuButton: document.querySelector("#menuButton"),
   messageStream: document.querySelector("#messageStream"),
   modelDot: document.querySelector("#modelDot"),
@@ -93,14 +100,17 @@ const reanalyzeCurrentReview = createReanalyzeController({ state, requestJson, r
 boot();
 
 async function boot() {
+  applyDocumentTranslations();
+  taskMode.selectAttachmentMode();
   bindEvents();
   draft.restore();
   await Promise.all([refreshHealthStatus({ requestJson, modelDot: elements.modelDot, modelText: elements.modelText }), loadHistory()]);
 }
 function bindEvents() {
   taskMode.bind();
+  bindLanguageToggle({ button: elements.languageToggle });
   elements.fileInput.addEventListener("change", () => selectFile(elements.fileInput.files[0]));
-  bindFileDrop({ dropZone: elements.composer, onFile: selectFile, onMultiple: () => toast("一次只能上传一份 BP，已选择第一个文件") });
+  bindFileDrop({ dropZone: elements.composer, onFile: selectFile, onMultiple: () => toast(t("validation.oneFile", { zh: "一次只能上传一份 BP，已选择第一个文件" })) });
   elements.removeFile.addEventListener("click", clearFile);
   elements.composer.addEventListener("submit", submitComposer);
   elements.conversationPdfButton.addEventListener("click", () => downloadConversationPdf(state.currentId));
@@ -135,30 +145,27 @@ async function loadHistory() {
     toast(error.message);
   }
 }
-
 function renderHistory(reviews) {
   renderHistoryList({ container: elements.historyList, reviews, currentId: state.currentId, requestJson,
     onOpen: loadReview, onCurrentDeleted: resetWorkspace, refresh: loadHistory, notify: toast });
 }
-
 function selectFile(file) {
   if (!file) return;
   const allowed = ["pdf", "pptx", "docx", "txt", "md", "markdown"];
   const extension = file.name.split(".").pop().toLowerCase();
   const fileTaskType = taskTypeForFileInput(state.taskType);
-  if (fileTaskType === PAPER_ANALYSIS && extension !== "pdf") return toast("论文解读仅支持 PDF 文件");
-  if (!allowed.includes(extension)) return toast("请上传 PDF、PPTX、DOCX、TXT 或 Markdown");
-  if (file.size > 20 * 1024 * 1024) return toast("文件不能超过 20 MB");
+  if (fileTaskType === PAPER_ANALYSIS && extension !== "pdf") return toast(t("validation.paperPdf", { zh: "论文解读仅支持 PDF 文件" }));
+  if (!allowed.includes(extension)) return toast(t("validation.fileTypes", { zh: "请上传 PDF、PPTX、DOCX、TXT 或 Markdown" }));
+  if (file.size > 20 * 1024 * 1024) return toast(t("validation.fileSize", { zh: "文件不能超过 20 MB" }));
   if (fileTaskType === PAPER_ANALYSIS) taskMode.selectPaperAnalysisMode();
   else taskMode.selectAttachmentMode();
   state.file = file;
   const attachmentReview = fileTaskType === PAPER_ANALYSIS || state.currentReview?.taskType !== ATTACHMENT_REVIEW ? null : state.currentReview;
   const matchingRequired = enterUploadedBpCompanyContext(elements.companyInput, attachmentReview);
   elements.fileName.textContent = sanitizeVisibleFilename(file.name);
-  elements.fileMeta.textContent = `${formatBytes(file.size)} · ${fileTaskType === PAPER_ANALYSIS ? "等待论文解读" : matchingRequired ? "提交后识别公司并判断是否新建对话" : "等待核查"}`;
+  elements.fileMeta.textContent = `${formatBytes(file.size)} · ${fileTaskType === PAPER_ANALYSIS ? t("file.paperPending", { zh: "等待论文解读" }) : matchingRequired ? t("file.companyPending", { zh: "提交后识别公司并判断是否新建对话" }) : t("file.reviewPending", { zh: "等待核查" })}`;
   elements.filePreview.classList.remove("hidden");
 }
-
 function clearFile() {
   setUploadAnalysisState(elements, { active: false });
   state.file = null;
@@ -166,7 +173,6 @@ function clearFile() {
   elements.filePreview.classList.add("hidden");
   restoreCurrentCompanyContext(elements.companyInput, state.currentReview);
 }
-
 async function submitComposer(event) {
   event.preventDefault();
   const prompt = elements.promptInput.value.trim();
@@ -199,7 +205,7 @@ async function submitComposer(event) {
       currentId: state.currentId,
       currentReview: state.currentReview,
       companyName,
-      instruction: prompt || "全面核查这份 BP",
+      instruction: prompt || t("instruction.bp", { zh: "全面核查这份 BP" }),
       file,
       data
     });
@@ -211,11 +217,11 @@ async function submitComposer(event) {
     elements.companyInput.value = payload.review.companyName || payload.decision?.newCompanyName || "";
     elements.companyInput.disabled = false;
     showConversation();
-    renderReviewRequest(elements.messageStream, { company: payload.review.companyName || payload.decision?.newCompanyName || companyName, prompt: prompt || "全面核查这份材料", file, taskType: ATTACHMENT_REVIEW });
+    renderReviewRequest(elements.messageStream, { company: payload.review.companyName || payload.decision?.newCompanyName || companyName, prompt: prompt || t("instruction.material", { zh: "全面核查这份材料" }), file, taskType: ATTACHMENT_REVIEW });
     draft.clearCompany();
     draft.clearPrompt();
     renderProgressPanel();
-    elements.conversationTitle.textContent = payload.review.title;
+    elements.conversationTitle.textContent = localizedReviewTitle(payload.review);
     draft.save();
     clearFile();
     connectEvents(state.currentId);
@@ -231,7 +237,6 @@ async function submitComposer(event) {
 async function startCompanyPreResearch(prompt) {
   return researchSubmission.start(COMPANY_PRE_RESEARCH, prompt);
 }
-
 function connectEvents(id) {
   state.eventSource?.close();
   const source = new EventSource(`/api/reviews/${id}/events`);
@@ -248,7 +253,7 @@ function connectEvents(id) {
     if (!event.data) return;
     const data = JSON.parse(event.data);
     if (applyRecoverableReport(data, { state, renderReportContent, renderProgressPanel })) state.eventSource?.close();
-    showError(data.message || "任务执行失败");
+    showError(data.message || t("error.taskFailed", { zh: "任务执行失败" }));
   });
 }
 
@@ -286,7 +291,7 @@ function completeReport(data, { keepEvents = false } = {}) {
   state.currentReview = { ...state.currentReview, reportAvailable: true, status: data.status || "completed", quality: data.quality, followupSuggestions };
   renderReportContent(state.report, false, data.quality);
   renderFollowupSuggestions(document.querySelector("#followupSuggestions"), followupSuggestions, askSuggestedFollowup);
-  elements.promptInput.placeholder = "继续追问：最大的投资风险是什么？";
+  elements.promptInput.placeholder = t("composer.riskFollowup", { zh: "继续追问：最大的投资风险是什么？" });
   elements.companyInput.disabled = true;
   if (!keepEvents) state.eventSource?.close();
   loadHistory();
@@ -318,7 +323,7 @@ async function loadReview(id) {
     for (const message of review.messages || []) renderChatMessage(message.role, message.content);
     if (["queued", "running"].includes(review.status) || isEvidenceRefreshActive(review.evidenceRefresh)) connectEvents(id);
     if (review.error) showError(review.error);
-    elements.conversationTitle.textContent = review.title;
+    elements.conversationTitle.textContent = localizedReviewTitle(review);
     elements.companyInput.value = review.companyName || "";
     elements.promptInput.value = lastUserInput(review) || review.instruction || "";
     autoResize();
@@ -332,7 +337,7 @@ async function loadReview(id) {
 }
 
 async function askFollowup(question) {
-  if (!question) return toast("请输入问题");
+  if (!question) return toast(t("validation.question", { zh: "请输入问题" }));
   await runFollowup({ question, currentId: state.currentId, messageStream: elements.messageStream, requestResponse,
     renderUser: (value) => renderChatMessage("user", value), draft, setBusy, scrollBottom });
 }
@@ -354,20 +359,22 @@ function renderProgressPanel() {
   if (!panel) {
     elements.messageStream.insertAdjacentHTML("beforeend", `
       <article class="message assistant" id="progressMessage">
-        <div class="message-meta"><span class="avatar">VL</span>研究代理</div>
-        <div class="assistant-card"><div class="progress-panel"><div class="progress-header"><strong>研究进行中</strong><span class="progress-badge">LIVE</span></div><div class="stage-list"></div></div></div>
+        <div class="message-meta"><span class="avatar">VL</span>${t("progress.agent", { zh: "研究代理" })}</div>
+        <div class="assistant-card"><div class="progress-panel"><div class="progress-header"><strong>${t("progress.running", { zh: "研究进行中" })}</strong><span class="progress-badge">LIVE</span></div><div class="stage-list"></div></div></div>
       </article>`);
     panel = document.querySelector("#progressMessage");
   }
   const list = panel.querySelector(".stage-list");
-  list.innerHTML = state.stages.map((stage) => `
+  list.innerHTML = state.stages.map((stage) => { const copy = progressStageCopy(stage); return `
     <div class="stage ${escapeHtml(stage.status)}">
       <span class="stage-icon">${["completed", "restored"].includes(stage.status) ? "✓" : stage.status === "failed" ? "!" : ""}</span>
-      <div><strong>${escapeHtml(stage.label)}</strong><p>${escapeHtml(stage.message || stageStatusCopy(stage.status))}</p></div>
-      <span class="stage-time">${stage.status === "running" ? "处理中" : ["completed", "restored"].includes(stage.status) ? "完成" : ""}</span>
-    </div>`).join("");
+      <div><strong>${escapeHtml(copy.label)}</strong><p>${escapeHtml(copy.message)}</p></div>
+      <span class="stage-time">${copy.time}</span>
+    </div>`; }).join("");
   const taskLabel = taskTypeLabels(state.currentReview?.taskType).task;
-  panel.querySelector(".progress-header strong").textContent = `${taskLabel}${state.currentReview?.reportAvailable ? "已完成" : "进行中"}`;
+  panel.querySelector(".progress-header strong").textContent = state.currentReview?.reportAvailable
+    ? t("progress.taskDone", { zh: `${taskLabel}已完成`, task: taskLabel })
+    : t("progress.taskRunning", { zh: `${taskLabel}进行中`, task: taskLabel });
   panel.querySelector(".progress-badge").textContent = state.currentReview?.reportAvailable ? "DONE" : "LIVE";
   scrollBottom();
 }
@@ -377,14 +384,14 @@ function ensureReportCard(streaming) {
   if (!card) {
     elements.messageStream.insertAdjacentHTML("beforeend", `
       <article class="message assistant" id="reportMessage">
-        <div class="message-meta"><span class="avatar">VL</span>核查报告</div>
+        <div class="message-meta"><span class="avatar">VL</span>${t("report.bp", { zh: "核查报告" })}</div>
         <div class="report-card">
           <div class="report-toolbar"><div><span>BP REVIEW REPORT</span><strong>核查结果</strong></div><span class="quality-score hidden"></span></div>
           <div class="quality-summary hidden"></div>
           <div class="report-content"></div>
           <div class="report-footer ${streaming ? "hidden" : ""}">
-            <button class="pdf-download-icon" data-download title="下载 PDF 核查报告" aria-label="下载 PDF 核查报告"><svg viewBox="0 0 52 62" aria-hidden="true"><path class="pdf-page" d="M8 2h25l11 11v47H8z"/><path class="pdf-fold" d="M33 2v12h11"/><text x="26" y="43" text-anchor="middle">PDF</text></svg></button>
-            <button class="refresh-evidence-button" data-refresh-evidence>刷新公开资料</button>
+            <button class="pdf-download-icon" data-download title="${t("report.download", { zh: "下载 PDF 核查报告" })}" aria-label="${t("report.download", { zh: "下载 PDF 核查报告" })}"><svg viewBox="0 0 52 62" aria-hidden="true"><path class="pdf-page" d="M8 2h25l11 11v47H8z"/><path class="pdf-fold" d="M33 2v12h11"/><text x="26" y="43" text-anchor="middle">PDF</text></svg></button>
+            <button class="refresh-evidence-button" data-refresh-evidence>${t("report.refresh", { zh: "刷新公开资料" })}</button>
             <button class="reanalyze-button" data-reanalyze>重新核查</button>
           </div>
           <div class="followup-suggestions hidden" id="followupSuggestions"></div>
@@ -416,7 +423,7 @@ function renderReportContent(markdown, streaming, quality) {
   card.querySelector(".report-footer").classList.toggle("hidden", streaming);
   if (quality) {
     const badge = card.querySelector(".quality-score");
-    badge.textContent = `质量 ${quality.score}`;
+    badge.textContent = t("quality.score", { zh: `质量 ${quality.score}`, score: quality.score });
     badge.classList.toggle("attention", quality.ok === false);
     badge.classList.remove("hidden");
     renderQualitySummary(card.querySelector(".quality-summary"), quality);
@@ -427,7 +434,7 @@ function renderReportContent(markdown, streaming, quality) {
 function renderChatMessage(role, content, streaming = false) {
   const article = document.createElement("article");
   article.className = `message ${role === "user" ? "user" : "assistant"}`;
-  article.innerHTML = `<div class="message-meta"><span class="avatar">${role === "user" ? "你" : "VL"}</span>${role === "user" ? "你的追问" : "研究代理"}</div>`;
+  article.innerHTML = `<div class="message-meta"><span class="avatar">${role === "user" ? t("message.you", { zh: "你" }) : "VL"}</span>${role === "user" ? t("message.followup", { zh: "你的追问" }) : t("progress.agent", { zh: "研究代理" })}</div>`;
   const body = document.createElement("div");
   body.className = role === "user" ? "message-body" : `assistant-card chat-answer-card report-content${streaming ? " stream-cursor streaming-plain" : ""}`;
   body.innerHTML = markdownToHtml(content);
@@ -439,7 +446,7 @@ function renderChatMessage(role, content, streaming = false) {
 
 function showError(message) {
   if (document.querySelector("#reviewError")) return;
-  elements.messageStream.insertAdjacentHTML("beforeend", `<div class="error-card" id="reviewError"><strong>核查中断</strong><br>${escapeHtml(message)}。已有阶段结果和草稿已保留，可从历史记录重试。</div>`);
+  elements.messageStream.insertAdjacentHTML("beforeend", `<div class="error-card" id="reviewError"><strong>${t("error.interrupted", { zh: "核查中断" })}</strong><br>${escapeHtml(message)}. ${t("error.retained", { zh: "已有阶段结果和草稿已保留，可从历史记录重试。" })}</div>`);
   scrollBottom();
 }
 
@@ -449,13 +456,13 @@ function resetWorkspace() {
   elements.emptyState.classList.remove("hidden");
   elements.messageStream.classList.add("hidden");
   elements.messageStream.innerHTML = "";
-  elements.conversationTitle.textContent = "新建 BP 核查";
+  elements.conversationTitle.textContent = t("top.newBp", { zh: "新建 BP 核查" });
   elements.companyInput.value = "";
   elements.companyInput.disabled = false;
   elements.promptInput.value = "";
   elements.paperUrlInput.value = "";
   elements.industryResearchTemplate.value = "industry_overview";
-  elements.promptInput.placeholder = "补充核查要求，或在报告完成后继续追问…";
+  elements.promptInput.placeholder = t("composer.promptPlaceholder", { zh: "补充核查要求，或在报告完成后继续追问…" });
   clearFile();
   taskMode.selectAttachmentMode();
   draft.clear();

@@ -60,6 +60,10 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .status-dot.offline { background: #b9573d; }
 .sidebar-link { width: 100%; border: 0; background: transparent; color: #625f59; padding: 9px; display: flex; gap: 9px; cursor: pointer; font-size: 13px; }
 .sidebar-link svg { width: 17px; }
+.sidebar-utility-row { display: flex; align-items: center; gap: 6px; }
+.sidebar-utility-row .sidebar-link { min-width: 0; }
+.language-toggle { flex: 0 0 auto; min-width: 38px; height: 30px; border: 1px solid #d4d0c8; border-radius: 8px; background: rgba(255,255,255,.45); color: #625f59; font-size: 11px; font-weight: 700; cursor: pointer; }
+.language-toggle:hover { background: #fff; border-color: #c9c4ba; }
 
 .workspace { position: relative; display: grid; grid-template-rows: 62px minmax(0, 1fr) auto; min-width: 0; min-height: 0; overflow: hidden; background: var(--paper); }
 .topbar { display: flex; align-items: center; border-bottom: 1px solid rgba(222,218,209,.72); padding: 0 28px; gap: 12px; background: rgba(247,245,240,.88); backdrop-filter: blur(16px); z-index: 5; }

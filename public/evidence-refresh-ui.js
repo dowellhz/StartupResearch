@@ -1,4 +1,6 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
+import { t } from "./i18n.js";
+import { progressStageCopy } from "./progress-stage-copy.js";
 
 export function isEvidenceRefreshActive(refresh) {
   return ["queued", "running"].includes(refresh?.status);
@@ -10,14 +12,14 @@ export function createEvidenceRefreshController({ state, container, requestJson,
   }
 
   async function start() {
-    if (!state.currentId || !confirmImpl("将按最多 8 个查询刷新公开资料，并生成独立变化报告。是否继续？")) return;
+    if (!state.currentId || !confirmImpl(t("refresh.confirm", { zh: "将按最多 8 个查询刷新公开资料，并生成独立变化报告。是否继续？" }))) return;
     try {
       const payload = await requestJson(`/api/reviews/${state.currentId}/refresh`, { method: "POST" });
       state.currentReview = payload.review;
       render(payload.review);
       setButtonDisabled(true);
       connectEvents(state.currentId);
-      notify("已开始刷新公开资料");
+      notify(t("refresh.started", { zh: "已开始刷新公开资料" }));
     } catch (error) {
       notify(error.message);
     }
@@ -38,14 +40,14 @@ export function createEvidenceRefreshController({ state, container, requestJson,
     setButtonDisabled(false);
     state.eventSource?.close();
     refreshHistory();
-    notify(data.result?.warning ? "资料刷新完成，但有降级提示" : "公开资料变化报告已生成");
+    notify(data.result?.warning ? t("refresh.degraded", { zh: "资料刷新完成，但有降级提示" }) : t("refresh.completed", { zh: "公开资料变化报告已生成" }));
   }
 
   function fail(data) {
     apply(data);
     setButtonDisabled(false);
     state.eventSource?.close();
-    notify(data.message || "公开资料刷新失败");
+    notify(data.message || t("refresh.failed", { zh: "公开资料刷新失败" }));
   }
 
   function setButtonDisabled(disabled) {
@@ -78,18 +80,14 @@ export function buildEvidenceRefreshMarkup({ refresh, result } = {}) {
   const statusLabel = active ? "LIVE" : result?.status === "needs_attention" || refresh?.status === "failed" ? "ATTENTION" : "DONE";
   const progress = steps.length ? `
     <div class="refresh-stage-list">
-      ${steps.map((stage) => `<div class="refresh-stage ${escapeHtml(stage.status || "pending")}"><span></span><div><strong>${escapeHtml(stage.label)}</strong><p>${escapeHtml(stage.message || stageCopy(stage.status))}</p></div></div>`).join("")}
+      ${steps.map((stage) => { const copy = progressStageCopy(stage); return `<div class="refresh-stage ${escapeHtml(stage.status || "pending")}"><span></span><div><strong>${escapeHtml(copy.label)}</strong><p>${escapeHtml(copy.message)}</p></div></div>`; }).join("")}
     </div>` : "";
   const report = result?.report ? `<div class="report-content refresh-report">${markdownToHtml(result.report)}</div>` : "";
   return `
-    <div class="message-meta"><span class="avatar">VL</span>公开资料刷新</div>
+    <div class="message-meta"><span class="avatar">VL</span>${t("refresh.label", { zh: "公开资料刷新" })}</div>
     <div class="report-card evidence-refresh-card">
-      <div class="report-toolbar"><div><span>EVIDENCE REFRESH</span><strong>${active ? "正在刷新公开资料" : "公开资料变化报告"}</strong></div><span class="refresh-status ${statusLabel.toLowerCase()}">${statusLabel}</span></div>
+      <div class="report-toolbar"><div><span>EVIDENCE REFRESH</span><strong>${active ? t("refresh.running", { zh: "正在刷新公开资料" }) : t("refresh.report", { zh: "公开资料变化报告" })}</strong></div><span class="refresh-status ${statusLabel.toLowerCase()}">${statusLabel}</span></div>
       ${progress}
-      ${report || (!active ? `<div class="refresh-empty">${escapeHtml(refresh?.error || "本次刷新尚未形成变化报告")}</div>` : "")}
+      ${report || (!active ? `<div class="refresh-empty">${escapeHtml(refresh?.error || t("refresh.empty", { zh: "本次刷新尚未形成变化报告" }))}</div>` : "")}
     </div>`;
-}
-
-function stageCopy(status) {
-  return ({ pending: "等待前序步骤", running: "正在处理", completed: "已完成", restored: "已恢复", failed: "执行失败" })[status] || "";
 }
