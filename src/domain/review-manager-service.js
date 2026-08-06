@@ -4,6 +4,7 @@ import { createCompanyPreResearchJob } from "./company-pre-research-pipeline.js"
 import { publicRefresh } from "./evidence-refresh-service.js";
 import { buildFollowupMessages } from "./review-prompts.js";
 import { normalizeReviewReport } from "./report-summary-service.js";
+import { normalizeOutputLanguage } from "./report-language.js";
 import { createSpecialResearchTaskService, INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./special-research-task-service.js";
 import { transitionReview } from "./review-state-machine.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
@@ -23,45 +24,47 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     enqueue: (id) => queueMicrotask(() => run(id).catch(() => {}))
   });
 
-  async function create({ taskType = "attachment_review", companyName, instruction, upload, researchTemplate, sourceUrl }, { ownerId } = {}) {
+  async function create({ taskType = "attachment_review", companyName, instruction, outputLanguage, upload, researchTemplate, sourceUrl }, { ownerId } = {}) {
     assertOwnerId(ownerId);
-    if (taskType === "company_pre_research") return createCompanyResearch({ companyName, instruction }, { ownerId });
+    outputLanguage = normalizeOutputLanguage(outputLanguage);
+    if (taskType === "company_pre_research") return createCompanyResearch({ companyName, instruction, outputLanguage }, { ownerId });
     if (specialResearchTasks.handles(taskType)) {
-      return publicJob(await specialResearchTasks.create({ taskType, companyName, instruction, upload, researchTemplate, sourceUrl }, { ownerId }));
+      return publicJob(await specialResearchTasks.create({ taskType, companyName, instruction, outputLanguage, upload, researchTemplate, sourceUrl }, { ownerId }));
     }
     if (!upload?.data || !upload?.filename) throw new Error("请先上传商业计划书");
     const buffer = Buffer.from(upload.data, "base64");
     const uploadHash = createHash("sha256").update(buffer).digest("hex");
     const createKey = `${ownerId}:${uploadHash}:${normalizeInstruction(instruction)}`;
     if (pendingCreates.has(createKey)) return pendingCreates.get(createKey);
-    const promise = createOnce({ companyName, instruction, upload, buffer, uploadHash }, { ownerId })
+    const promise = createOnce({ companyName, instruction, outputLanguage, upload, buffer, uploadHash }, { ownerId })
       .finally(() => pendingCreates.delete(createKey));
     pendingCreates.set(createKey, promise);
     return promise;
   }
 
-  async function createCompanyResearch({ companyName, instruction }, { ownerId }) {
+  async function createCompanyResearch({ companyName, instruction, outputLanguage }, { ownerId }) {
     if (!companyResearchPipeline) throw new Error("公司预研服务未启用");
     const name = String(companyName || "").replace(/\s+/g, " ").trim();
     if (!name) throw new Error("公司预研需要填写公司名称");
     const researchInstruction = normalizeInstruction(instruction) || "基于公开信息完成公司预研";
-    const createKey = `${ownerId}:company_pre_research:${name.toLowerCase()}:${researchInstruction}`;
+    const createKey = `${ownerId}:company_pre_research:${name.toLowerCase()}:${researchInstruction}:${outputLanguage || "zh"}`;
     if (pendingCreates.has(createKey)) return pendingCreates.get(createKey);
-    const promise = createCompanyResearchOnce({ companyName: name, instruction: researchInstruction }, { ownerId })
+    const promise = createCompanyResearchOnce({ companyName: name, instruction: researchInstruction, outputLanguage }, { ownerId })
       .finally(() => pendingCreates.delete(createKey));
     pendingCreates.set(createKey, promise);
     return promise;
   }
 
-  async function createCompanyResearchOnce({ companyName, instruction }, { ownerId }) {
+  async function createCompanyResearchOnce({ companyName, instruction, outputLanguage }, { ownerId }) {
     const activeDuplicate = (await repository.list?.({ ownerId, limit: 100 }) || []).find((job) =>
       job.taskType === "company_pre_research"
       && ["queued", "running"].includes(job.status)
       && normalizeComparable(job.companyName) === normalizeComparable(companyName)
-      && normalizeInstruction(job.instruction) === normalizeInstruction(instruction));
+      && normalizeInstruction(job.instruction) === normalizeInstruction(instruction)
+      && (job.outputLanguage || "zh") === (outputLanguage || "zh"));
     if (activeDuplicate) return publicJob(activeDuplicate);
     const job = {
-      ...createCompanyPreResearchJob({ companyName, instruction, steps: companyResearchPipeline.steps, now }),
+      ...createCompanyPreResearchJob({ companyName, instruction, outputLanguage, steps: companyResearchPipeline.steps, now }),
       ownerId
     };
     await repository.save(job);
@@ -69,14 +72,15 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     return publicJob(job);
   }
 
-  async function createOnce({ companyName, instruction, upload, buffer, uploadHash }, { ownerId }) {
+  async function createOnce({ companyName, instruction, outputLanguage, upload, buffer, uploadHash }, { ownerId }) {
     const activeDuplicate = (await repository.list?.({ ownerId, limit: 100 }) || []).find((job) =>
       ["queued", "running"].includes(job.status)
       && job.upload?.sha256 === uploadHash
-      && normalizeInstruction(job.instruction) === normalizeInstruction(instruction));
+      && normalizeInstruction(job.instruction) === normalizeInstruction(instruction)
+      && (job.outputLanguage || "zh") === (outputLanguage || "zh"));
     if (activeDuplicate) return publicJob(activeDuplicate);
     let job = {
-      ...createReviewJob({ companyName, instruction, upload: { ...upload, sha256: uploadHash }, steps: pipeline.steps, now }),
+      ...createReviewJob({ companyName, instruction, outputLanguage, upload: { ...upload, sha256: uploadHash }, steps: pipeline.steps, now }),
       ownerId
     };
     if (typeof repository.saveUpload === "function") {
@@ -100,7 +104,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     return publicJob(saved);
   }
 
-  async function reanalyze(id, { ownerId } = {}) {
+  async function reanalyze(id, { ownerId, outputLanguage } = {}) {
     const existing = await requireOwnedJob(id, ownerId);
     assertNoEvidenceRefresh(existing);
     if (existing.status === "running") throw new Error("任务正在运行，无需重复提交");
@@ -113,6 +117,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     const resumed = transitionReview(existing, "running");
     const job = await repository.save({
       ...resumed,
+      outputLanguage: outputLanguage ? normalizeOutputLanguage(outputLanguage) : existing.outputLanguage || "zh",
       checkpoints: {},
       stages: selectedPipeline.steps.map((step) => ({ ...step, status: "pending" })),
       error: "",
@@ -125,7 +130,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     return publicJob(job);
   }
 
-  async function replaceBp(id, { instruction, upload }, { ownerId } = {}) {
+  async function replaceBp(id, { instruction, outputLanguage, upload }, { ownerId } = {}) {
     const existing = await requireOwnedJob(id, ownerId);
     if (taskTypeOf(existing) !== "attachment_review") throw new Error("公司预研对话不支持替换 BP，请新建附件核查");
     assertNoEvidenceRefresh(existing);
@@ -144,6 +149,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     const job = await repository.save({
       ...resumed,
       instruction: String(instruction || existing.instruction || "全面核查这份 BP").trim(),
+      outputLanguage: outputLanguage ? normalizeOutputLanguage(outputLanguage) : existing.outputLanguage || "zh",
       upload: { filename: upload.filename, mimeType: upload.mimeType, size: upload.size, data: "", persisted: true, storagePath, sha256: uploadHash },
       checkpoints: {},
       stages: pipeline.steps.map((step) => ({ ...step, status: "pending" })),

@@ -108,6 +108,7 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
         messages: buildCompanyResearchExtractionMessages({
           companyName: context.job.companyName,
           instruction: context.job.instruction,
+          outputLanguage: context.job.outputLanguage,
           sources: context.sources
         }),
         signal: context.signal,
@@ -127,6 +128,7 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
     const messages = buildCompanyResearchReportMessages({
       companyName: context.job.companyName,
       instruction: context.job.instruction,
+      outputLanguage: context.job.outputLanguage,
       scope: context.scope,
       analysis: context.analysis,
       sources: context.sources,
@@ -152,19 +154,22 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
         });
         const bestReport = redactSensitiveText(report || streamed);
         if (bestReport.length >= 300) return { ...context, report: bestReport };
-        lastError = `第 ${attempt} 次输出仅 ${bestReport.length} 个字符`;
+        lastError = context.job.outputLanguage === "en" ? `attempt ${attempt} returned only ${bestReport.length} characters` : `第 ${attempt} 次输出仅 ${bestReport.length} 个字符`;
       } catch (error) {
         if (context.signal?.aborted) throw error;
         lastError = error.message || String(error);
       }
       emit(context, "stage", stageFor("report-generation", "running", `长报告输出异常，正在自动重试（${attempt}/2）…`));
     }
-    const generationWarning = `公司预研报告输出异常：${lastError}。已使用公开来源与结构化结果生成可恢复报告。`;
+    const generationWarning = context.job.outputLanguage === "en"
+      ? `Company research report generation failed: ${lastError}. A recoverable report was created from public sources and structured results.`
+      : `公司预研报告输出异常：${lastError}。已使用公开来源与结构化结果生成可恢复报告。`;
     const report = redactSensitiveText(buildCompanyResearchFallback({
       companyName: context.job.companyName,
       analysis: context.analysis,
       sources: context.sources,
-      warning: generationWarning
+      warning: generationWarning,
+      outputLanguage: context.job.outputLanguage
     }));
     emit(context, "report_delta", { delta: report });
     return { ...context, report, generationWarning };
@@ -173,10 +178,12 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
   async function qualityGate(context) {
     const report = stabilizeCompanyResearchReport(context.report, {
       companyName: context.job.companyName,
+      outputLanguage: context.job.outputLanguage,
       sources: context.sources,
       analysis: context.analysis
     });
     const quality = assessCompanyResearchQuality(report, {
+      outputLanguage: context.job.outputLanguage,
       sources: context.sources,
       analysis: context.analysis,
       researchWarning: context.researchWarning,
@@ -193,7 +200,7 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
     await repository.saveReport(context.job.id, context.report);
     let pdfStoragePath = context.job.pdfStoragePath || "";
     if (pdfReportService && typeof repository.savePdf === "function") {
-      const pdf = await pdfReportService.render({ title: `${context.job.companyName} 公司预研报告`, markdown: context.report });
+      const pdf = await pdfReportService.render({ title: `${context.job.companyName} ${context.job.outputLanguage === "en" ? "Company Research Report" : "公司预研报告"}`, markdown: context.report });
       pdfStoragePath = await repository.savePdf(context.job.id, pdf, { date: context.job.createdAt || now() });
     }
     const finalJob = {
@@ -236,7 +243,7 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
   return { execute, steps: steps.map(({ key, label }) => ({ key, label })) };
 }
 
-export function createCompanyPreResearchJob({ companyName, instruction, steps, now = () => new Date().toISOString() }) {
+export function createCompanyPreResearchJob({ companyName, instruction, outputLanguage = "zh", steps, now = () => new Date().toISOString() }) {
   const createdAt = now();
   const name = String(companyName || "").trim();
   return {
@@ -245,6 +252,7 @@ export function createCompanyPreResearchJob({ companyName, instruction, steps, n
     companyName: name,
     title: `${name} 公司预研`,
     instruction: String(instruction || "基于公开信息完成公司预研").trim(),
+    outputLanguage: String(outputLanguage).toLowerCase().startsWith("en") ? "en" : "zh",
     upload: null,
     status: "queued",
     stages: steps.map((step) => ({ ...step, status: "pending" })),
@@ -281,19 +289,20 @@ function validateAnalysis(value, sources = []) {
 }
 
 function fallbackAnalysis(context, warning) {
+  const english = context.job.outputLanguage === "en";
   return {
     companyProfile: { legalName: context.job.companyName },
     findings: context.sources.slice(0, 12).map((source, index) => ({
       id: `finding_${index + 1}`,
-      domain: "公开资料",
+      domain: english ? "Public Sources" : "公开资料",
       statement: source.snippet || source.title,
       sourceIds: [source.id],
       confidence: source.sourceTier === "primary" ? "high" : "medium",
       nature: "third_party_report"
     })),
-    risks: [{ category: "数据质量", description: "公开事实结构化未完整完成，需结合来源原文复核", basisSourceIds: [], severity: "medium", nextStep: "逐条打开来源复核" }],
+    risks: [{ category: english ? "Data Quality" : "数据质量", description: english ? "Structured public-fact extraction did not complete; verify each point against the original sources." : "公开事实结构化未完整完成，需结合来源原文复核", basisSourceIds: [], severity: "medium", nextStep: english ? "Open and verify each source" : "逐条打开来源复核" }],
     missingInformation: [warning],
-    followupQuestions: ["法定主体、核心团队、客户、财务和融资历史分别有哪些可验证底层材料？"]
+    followupQuestions: [english ? "Which primary records can verify the legal entity, core team, customers, financials, and financing history?" : "法定主体、核心团队、客户、财务和融资历史分别有哪些可验证底层材料？"]
   };
 }
 

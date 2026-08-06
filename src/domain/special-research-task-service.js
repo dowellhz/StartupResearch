@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createIndustryResearchJob } from "./industry-research-pipeline.js";
 import { createPaperAnalysisJob } from "./paper-analysis-pipeline.js";
+import { normalizeOutputLanguage } from "./report-language.js";
 
 export const INDUSTRY_RESEARCH = "industry_research";
 export const PAPER_ANALYSIS = "paper_analysis";
@@ -42,8 +43,8 @@ export function createSpecialResearchTaskService({ repository, industryResearchP
       upload = { ...input.upload, data: "", sha256: createHash("sha256").update(buffer).digest("hex") };
     }
     let job = input.taskType === INDUSTRY_RESEARCH
-      ? createIndustryResearchJob({ topic: input.companyName, instruction: input.instruction, researchTemplate: input.researchTemplate, steps: selectedPipeline.steps, now })
-      : createPaperAnalysisJob({ title: input.companyName, instruction: input.instruction, sourceUrl: input.sourceUrl, upload, steps: selectedPipeline.steps, now });
+      ? createIndustryResearchJob({ topic: input.companyName, instruction: input.instruction, outputLanguage: input.outputLanguage, researchTemplate: input.researchTemplate, steps: selectedPipeline.steps, now })
+      : createPaperAnalysisJob({ title: input.companyName, instruction: input.instruction, outputLanguage: input.outputLanguage, sourceUrl: input.sourceUrl, upload, steps: selectedPipeline.steps, now });
     job.ownerId = ownerId;
     if (buffer && repository.saveUpload) {
       const storagePath = await repository.saveUpload(job.id, buffer);
@@ -60,7 +61,7 @@ export function createSpecialResearchTaskService({ repository, industryResearchP
 function normalizeIndustryInput(input) {
   const companyName = singleLine(input.companyName, 300);
   if (!companyName) throw new Error("行业研究需要填写行业或技术主题");
-  return { taskType: INDUSTRY_RESEARCH, companyName, instruction: singleLine(input.instruction, 4000) || "完成行业概览研究", researchTemplate: ["industry_overview", "technical", "commercial", "investment"].includes(input.researchTemplate) ? input.researchTemplate : "industry_overview" };
+  return { taskType: INDUSTRY_RESEARCH, companyName, instruction: singleLine(input.instruction, 4000) || "完成行业概览研究", outputLanguage: normalizeOutputLanguage(input.outputLanguage), researchTemplate: ["industry_overview", "technical", "commercial", "investment"].includes(input.researchTemplate) ? input.researchTemplate : "industry_overview" };
 }
 
 function normalizePaperInput(input) {
@@ -68,7 +69,7 @@ function normalizePaperInput(input) {
   const upload = input.upload?.data && input.upload?.filename ? input.upload : null;
   if (!upload && !/^https?:\/\//i.test(sourceUrl)) throw new Error("论文解读需要上传 PDF 或填写论文 URL");
   if (upload && !/\.pdf$/i.test(upload.filename) && !/application\/pdf/i.test(upload.mimeType || "")) throw new Error("论文解读仅支持 PDF 文件");
-  return { taskType: PAPER_ANALYSIS, companyName: singleLine(input.companyName, 500), instruction: singleLine(input.instruction, 4000) || "从技术、可信度、行业价值和商业化角度解读论文", sourceUrl, upload };
+  return { taskType: PAPER_ANALYSIS, companyName: singleLine(input.companyName, 500), instruction: singleLine(input.instruction, 4000) || "从技术、可信度、行业价值和商业化角度解读论文", outputLanguage: normalizeOutputLanguage(input.outputLanguage), sourceUrl, upload };
 }
 
 function createKey(ownerId, input) {
@@ -77,7 +78,7 @@ function createKey(ownerId, input) {
 }
 
 function duplicateKey(value) {
-  return [value.taskType, normalizeComparable(value.companyName), normalizeComparable(value.instruction), value.researchTemplate || "", String(value.sourceUrl || "").toLowerCase(), value.upload?.sha256 || ""].join(":");
+  return [value.taskType, normalizeComparable(value.companyName), normalizeComparable(value.instruction), value.outputLanguage || "zh", value.researchTemplate || "", String(value.sourceUrl || "").toLowerCase(), value.upload?.sha256 || ""].join(":");
 }
 
 function singleLine(value, limit) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, limit); }

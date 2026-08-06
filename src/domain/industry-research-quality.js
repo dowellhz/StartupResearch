@@ -1,18 +1,21 @@
 import { resolveIndustryResearchTemplate } from "./industry-research-prompts.js";
+import { isEnglishOutput } from "./report-language.js";
 
-export function stabilizeIndustryResearchReport(markdown, { topic, researchTemplate, sources = [] } = {}) {
-  const selected = resolveIndustryResearchTemplate(researchTemplate);
-  let report = String(markdown || "").trim() || `# ${topic || "未命名主题"} · ${selected.label}`;
-  const sections = ["研究结论摘要", ...selected.sections, "参考来源"];
+export function stabilizeIndustryResearchReport(markdown, { topic, outputLanguage, researchTemplate, sources = [] } = {}) {
+  const english = isEnglishOutput(outputLanguage);
+  const selected = resolveIndustryResearchTemplate(researchTemplate, outputLanguage);
+  let report = String(markdown || "").trim() || `# ${topic || (english ? "Untitled Topic" : "未命名主题")} · ${selected.label}`;
+  const sections = [english ? "Research Conclusion Summary" : "研究结论摘要", ...selected.sections, english ? "References" : "参考来源"];
   for (const section of sections) {
-    if (!report.includes(`## ${section}`)) report += `\n\n## ${section}\n\n${fallback(section, sources)}`;
+    if (!report.includes(`## ${section}`)) report += `\n\n## ${section}\n\n${fallback(section, sources, english)}`;
   }
   return report.trim();
 }
 
-export function assessIndustryResearchQuality(markdown, { researchTemplate, sources = [], synthesis = {}, warnings = [] } = {}) {
-  const selected = resolveIndustryResearchTemplate(researchTemplate);
-  const required = ["研究结论摘要", ...selected.sections, "参考来源"];
+export function assessIndustryResearchQuality(markdown, { outputLanguage, researchTemplate, sources = [], synthesis = {}, warnings = [] } = {}) {
+  const english = isEnglishOutput(outputLanguage);
+  const selected = resolveIndustryResearchTemplate(researchTemplate, outputLanguage);
+  const required = [english ? "Research Conclusion Summary" : "研究结论摘要", ...selected.sections, english ? "References" : "参考来源"];
   const present = required.filter((section) => String(markdown).includes(`## ${section}`)).length;
   const findings = [];
   const sourceCount = sources.length;
@@ -41,7 +44,9 @@ function citationUrlsAreKnown(markdown, sources) {
   return Array.from(String(markdown).matchAll(/\]\((https?:\/\/[^)\s]+)\)/g), (match) => match[1]).every((url) => known.has(url));
 }
 
-function fallback(section, sources) {
+function fallback(section, sources, english = false) {
+  if (english && section === "References") return sources.length ? sources.map((item) => `- [${item.title}](${item.url})`).join("\n") : "No usable public sources were produced in this run.";
+  if (english) return "This public-source search produced insufficient evidence; continue targeted verification.";
   if (section === "参考来源") return sources.length ? sources.map((item) => `- [${item.title}](${item.url})`).join("\n") : "本次公开检索未形成可引用来源。";
   return "本次公开检索未形成足够证据，建议继续定向核验。";
 }

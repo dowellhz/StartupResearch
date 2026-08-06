@@ -70,7 +70,7 @@ export function createPaperAnalysisPipeline({ extractor, model, repository, pape
     try {
       metadata = await completeStructuredJson({
         model,
-        messages: buildPaperMetadataMessages({ title: context.job.companyName, sourceUrl: context.job.sourceUrl, document: context.document }),
+        messages: buildPaperMetadataMessages({ title: context.job.companyName, sourceUrl: context.job.sourceUrl, outputLanguage: context.job.outputLanguage, document: context.document }),
         signal: context.signal,
         maxTokens: 3000,
         validate: normalizeMetadata,
@@ -103,7 +103,7 @@ export function createPaperAnalysisPipeline({ extractor, model, repository, pape
   }
 
   async function generateReport(context) {
-    const messages = buildPaperReportMessages({ metadata: context.metadata, document: context.document, sources: context.sources, instruction: context.job.instruction, sourceUrl: context.job.sourceUrl || context.acquired.resolvedUrl, researchWarning: context.researchWarning });
+    const messages = buildPaperReportMessages({ metadata: context.metadata, document: context.document, sources: context.sources, instruction: context.job.instruction, outputLanguage: context.job.outputLanguage, sourceUrl: context.job.sourceUrl || context.acquired.resolvedUrl, researchWarning: context.researchWarning });
     let lastError = "";
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       let streamed = "";
@@ -117,31 +117,31 @@ export function createPaperAnalysisPipeline({ extractor, model, repository, pape
         } });
         const best = redactSensitiveText(report || streamed);
         if (best.length >= 300) return { ...context, report: best };
-        lastError = `第 ${attempt} 次输出仅 ${best.length} 个字符`;
+        lastError = context.job.outputLanguage === "en" ? `attempt ${attempt} returned only ${best.length} characters` : `第 ${attempt} 次输出仅 ${best.length} 个字符`;
       } catch (error) {
         if (context.signal?.aborted) throw error;
         lastError = error.message || String(error);
       }
       emit(context, "stage", stageFor("report-generation", "running", `解读输出异常，正在自动重试（${attempt}/2）…`));
     }
-    const generationWarning = `论文解读输出异常：${lastError}`;
-    const report = buildPaperFallback({ metadata: context.metadata, document: context.document, sources: context.sources, sourceUrl: context.job.sourceUrl, warning: generationWarning });
+    const generationWarning = context.job.outputLanguage === "en" ? `Paper analysis generation failed: ${lastError}` : `论文解读输出异常：${lastError}`;
+    const report = buildPaperFallback({ metadata: context.metadata, document: context.document, sources: context.sources, sourceUrl: context.job.sourceUrl, warning: generationWarning, outputLanguage: context.job.outputLanguage });
     emit(context, "report_delta", { delta: report });
     return { ...context, report, generationWarning };
   }
 
   async function qualityGate(context) {
     const sourceUrl = context.job.sourceUrl || context.acquired.resolvedUrl || "";
-    const report = stabilizePaperAnalysisReport(context.report, { title: context.metadata.title, sources: context.sources, sourceUrl });
+    const report = stabilizePaperAnalysisReport(context.report, { title: context.metadata.title, outputLanguage: context.job.outputLanguage, sources: context.sources, sourceUrl });
     const warnings = [context.metadataWarning, context.researchWarning, context.generationWarning];
-    return { ...context, report, quality: assessPaperAnalysisQuality(report, { document: context.document, metadata: context.metadata, sources: context.sources, sourceUrl, warnings }) };
+    return { ...context, report, quality: assessPaperAnalysisQuality(report, { outputLanguage: context.job.outputLanguage, document: context.document, metadata: context.metadata, sources: context.sources, sourceUrl, warnings }) };
   }
 
   async function persistReport(context) {
     await repository.saveReport(context.job.id, context.report);
     let pdfStoragePath = context.job.pdfStoragePath || "";
     if (pdfReportService && repository.savePdf) {
-      const pdf = await pdfReportService.render({ title: `${context.metadata.title || context.job.companyName} 论文解读`, markdown: context.report });
+      const pdf = await pdfReportService.render({ title: `${context.metadata.title || context.job.companyName} ${context.job.outputLanguage === "en" ? "Paper Analysis" : "论文解读"}`, markdown: context.report });
       pdfStoragePath = await repository.savePdf(context.job.id, pdf, { date: context.job.createdAt || now() });
     }
     const finalJob = { ...context.job, status: context.quality.ok ? "completed" : "needs_attention", reportAvailable: true, pdfStoragePath, quality: context.quality, sources: context.sources, analysis: { paperMetadata: context.metadata }, researchPlan: { tools: ["arxiv_paper_search", "scholarly_works_search", "openalex_research_search"] }, researchWarning: context.researchWarning || "", generationWarning: context.generationWarning || "", extractionWarning: context.metadataWarning || "", followupSuggestions: ["这篇论文最核心的技术创新是什么？", "实验设计有哪些不足或未覆盖场景？", "距离产业化还缺少哪些验证？", "有哪些相关论文、代码或团队值得继续跟踪？"], reanalysisInProgress: false, error: "", failedStep: "", completedAt: now() };
@@ -153,10 +153,10 @@ export function createPaperAnalysisPipeline({ extractor, model, repository, pape
   return { execute, steps: steps.map(({ key, label }) => ({ key, label })) };
 }
 
-export function createPaperAnalysisJob({ title, instruction, sourceUrl, upload = null, steps, now = () => new Date().toISOString() }) {
+export function createPaperAnalysisJob({ title, instruction, outputLanguage = "zh", sourceUrl, upload = null, steps, now = () => new Date().toISOString() }) {
   const createdAt = now();
   const name = String(title || upload?.filename?.replace(/\.pdf$/i, "") || "待识别论文").trim();
-  return { id: `paper_${randomUUID().replace(/-/g, "").slice(0, 20)}`, taskType: "paper_analysis", companyName: name, title: `${name} · 论文解读`, instruction: String(instruction || "从技术、可信度、行业价值和商业化角度解读论文").trim(), sourceUrl: String(sourceUrl || "").trim(), upload, status: "queued", stages: steps.map((step) => ({ ...step, status: "pending" })), checkpoints: {}, messages: [], createdAt, updatedAt: createdAt };
+  return { id: `paper_${randomUUID().replace(/-/g, "").slice(0, 20)}`, taskType: "paper_analysis", companyName: name, title: `${name} · 论文解读`, instruction: String(instruction || "从技术、可信度、行业价值和商业化角度解读论文").trim(), outputLanguage: String(outputLanguage).toLowerCase().startsWith("en") ? "en" : "zh", sourceUrl: String(sourceUrl || "").trim(), upload, status: "queued", stages: steps.map((step) => ({ ...step, status: "pending" })), checkpoints: {}, messages: [], createdAt, updatedAt: createdAt };
 }
 
 function normalizeMetadata(value) {

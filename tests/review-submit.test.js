@@ -5,12 +5,13 @@ import { submitCompanyPreResearch, submitIndustryResearch, submitPaperAnalysis, 
 test("company pre-research submits an explicit task type without an attachment", async () => {
   let request;
   const requestJson = async (url, options) => { request = { url, options }; return { ok: true }; };
-  await submitCompanyPreResearch({ requestJson, companyName: "示例科技", instruction: "关注团队" });
+  await submitCompanyPreResearch({ requestJson, companyName: "示例科技", instruction: "关注团队", outputLanguage: "en" });
   assert.equal(request.url, "/api/reviews");
   assert.deepEqual(JSON.parse(request.options.body), {
     taskType: "company_pre_research",
     companyName: "示例科技",
-    instruction: "关注团队"
+    instruction: "关注团队",
+    outputLanguage: "en"
   });
 });
 

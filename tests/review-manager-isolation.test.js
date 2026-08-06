@@ -62,10 +62,11 @@ test("reanalyze archives the visible report and resets checkpoints while retaini
   };
   const pipeline = { steps: [{ key: "document-parse", label: "解析" }], execute: async () => ({ ok: true }) };
   const manager = createReviewManagerService({ pipeline, repository, model: {} });
-  const result = await manager.reanalyze("bp_reanalyze", { ownerId });
+  const result = await manager.reanalyze("bp_reanalyze", { ownerId, outputLanguage: "en" });
   assert.equal(archived, true);
   assert.equal(result.status, "running");
   assert.equal(result.reanalysisInProgress, true);
+  assert.equal(result.outputLanguage, "en");
   assert.equal(result.checkpointCount, 0);
   assert.equal("previousReportArchive" in result, false);
   assert.equal("previousAnalysisSnapshot" in result, false);

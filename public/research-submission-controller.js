@@ -1,7 +1,7 @@
 import { fileToBase64, submitCompanyPreResearch, submitIndustryResearch, submitPaperAnalysis } from "./review-submit.js";
 import { renderReviewRequest } from "./review-request-message.js";
 import { COMPANY_PRE_RESEARCH, INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./composer-task-mode.js";
-import { t } from "./i18n.js";
+import { getLanguage, t } from "./i18n.js";
 import { localizedReviewTitle } from "./task-type-labels.js";
 
 export function createResearchSubmissionController(deps) {
@@ -38,10 +38,11 @@ export function createResearchSubmissionController(deps) {
   }
 
   async function submit(taskType, { subject, sourceUrl, instruction }) {
-    if (taskType === COMPANY_PRE_RESEARCH) return submitCompanyPreResearch({ requestJson, companyName: subject, instruction });
-    if (taskType === INDUSTRY_RESEARCH) return submitIndustryResearch({ requestJson, topic: subject, instruction, researchTemplate: elements.industryResearchTemplate.value });
+    const outputLanguage = getLanguage();
+    if (taskType === COMPANY_PRE_RESEARCH) return submitCompanyPreResearch({ requestJson, companyName: subject, instruction, outputLanguage });
+    if (taskType === INDUSTRY_RESEARCH) return submitIndustryResearch({ requestJson, topic: subject, instruction, researchTemplate: elements.industryResearchTemplate.value, outputLanguage });
     const data = state.file ? await fileToBase64(state.file) : "";
-    return submitPaperAnalysis({ requestJson, title: subject, instruction, sourceUrl, file: state.file, data });
+    return submitPaperAnalysis({ requestJson, title: subject, instruction, sourceUrl, outputLanguage, file: state.file, data });
   }
 
   return { start };

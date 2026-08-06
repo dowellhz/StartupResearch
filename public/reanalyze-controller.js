@@ -6,7 +6,11 @@ export function createReanalyzeController({ state, requestJson, renderProgress, 
     const message = confirmationMessage(taskType);
     if (!state.currentId || !confirmImpl(message)) return;
     try {
-      const payload = await requestJson(`/api/reviews/${state.currentId}/reanalyze`, { method: "POST" });
+      const payload = await requestJson(`/api/reviews/${state.currentId}/reanalyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outputLanguage: getLanguage() })
+      });
       state.currentReview = payload.review;
       state.stages = payload.review.stages || [];
       state.report = "";

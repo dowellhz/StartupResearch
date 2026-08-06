@@ -81,6 +81,7 @@ async function route(req, res) {
       taskType,
       companyName: body.companyName,
       instruction: body.instruction,
+      outputLanguage: normalizeOutputLanguage(body.outputLanguage),
       researchTemplate: body.researchTemplate,
       sourceUrl: body.sourceUrl,
       ...(body.file ? { upload: normalizeUpload(body.file) } : {})
@@ -97,7 +98,10 @@ async function route(req, res) {
     if (req.method === "POST" && action === "messages") return streamAnswer(req, res, id, browserSession.id);
     if (req.method === "POST" && action === "company-match") return matchAndRouteBp(req, res, id, browserSession.id);
     if (req.method === "POST" && action === "retry") return json(res, 202, { ok: true, review: await manager.retry(id, { ownerId: browserSession.id }) });
-    if (req.method === "POST" && action === "reanalyze") return json(res, 202, { ok: true, review: await manager.reanalyze(id, { ownerId: browserSession.id }) });
+    if (req.method === "POST" && action === "reanalyze") {
+      const body = await readJson(req, 16 * 1024);
+      return json(res, 202, { ok: true, review: await manager.reanalyze(id, { ownerId: browserSession.id, outputLanguage: body.outputLanguage ? normalizeOutputLanguage(body.outputLanguage) : undefined }) });
+    }
     if (req.method === "POST" && action === "refresh") return json(res, 202, { ok: true, review: await manager.refreshEvidence(id, { ownerId: browserSession.id }) });
     if (req.method === "DELETE" && !action) return json(res, 200, { ok: true, result: await manager.deleteConversation(id, { ownerId: browserSession.id }) });
     if (req.method === "GET" && !action) return json(res, 200, { ok: true, review: await manager.get(id, { ownerId: browserSession.id }) });
@@ -117,7 +121,7 @@ async function matchAndRouteBp(req, res, id, ownerId) {
     upload: body.file
   });
   if (body.apply === false) return json(res, 200, { ok: true, decision });
-  const input = { companyName: decision.newCompanyName || String(body.companyName || "").trim(), instruction: body.instruction || "全面核查这份 BP", upload: normalizeUpload(body.file) };
+  const input = { companyName: decision.newCompanyName || String(body.companyName || "").trim(), instruction: body.instruction || "全面核查这份 BP", outputLanguage: normalizeOutputLanguage(body.outputLanguage), upload: normalizeUpload(body.file) };
   const sameCompany = decision.sameCompany;
   const review = sameCompany
     ? await manager.replaceBp(id, input, { ownerId })
@@ -258,6 +262,10 @@ function normalizeTaskType(value) {
   return ["company_pre_research", "industry_research", "paper_analysis"].includes(value) ? value : "attachment_review";
 }
 
+function normalizeOutputLanguage(value) {
+  return String(value || "").toLowerCase().startsWith("en") ? "en" : "zh";
+}
+
 function normalizeUpload(file) {
   return {
     filename: sanitizeVisibleFilename(file.filename),
@@ -306,6 +314,10 @@ async function ensureStoredPdf(job) {
 }
 
 function reportTitle(review) {
+  if (review.outputLanguage === "en") {
+    const suffix = ({ company_pre_research: "Company Research Report", industry_research: "Industry Research Report", paper_analysis: "Paper Analysis" })[review.taskType] || "BP Review Report";
+    return `${review.companyName || "Untitled Subject"} ${suffix}`;
+  }
   const suffix = ({ company_pre_research: "公司预研报告", industry_research: "行业研究报告", paper_analysis: "论文解读" })[review.taskType] || "BP 核查报告";
   return `${review.companyName || "未命名主题"} ${suffix}`;
 }

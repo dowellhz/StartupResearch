@@ -64,6 +64,7 @@ export function buildCompanyResearchConclusionSummary({ companyName, sources = [
 export function normalizeReviewReport(review, markdown = review?.report) {
   const text = String(markdown || "").trim();
   if (text && !/^#[ \t]+/m.test(text)) return text;
+  if (review?.outputLanguage === "en") return text;
   const taskType = review?.taskType || "attachment_review";
   if (["industry_research", "paper_analysis"].includes(taskType)) return text;
   if (taskType === "company_pre_research") {

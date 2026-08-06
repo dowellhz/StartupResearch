@@ -49,13 +49,13 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
   }
 
   async function planResearch(context) {
-    const selected = resolveIndustryResearchTemplate(context.job.researchTemplate);
+    const selected = resolveIndustryResearchTemplate(context.job.researchTemplate, context.job.outputLanguage);
     let planningWarning = "";
     let plan;
     try {
       plan = await completeStructuredJson({
         model,
-        messages: buildIndustryPlanMessages({ topic: context.job.companyName, instruction: context.job.instruction, researchTemplate: context.job.researchTemplate }),
+        messages: buildIndustryPlanMessages({ topic: context.job.companyName, instruction: context.job.instruction, outputLanguage: context.job.outputLanguage, researchTemplate: context.job.researchTemplate }),
         signal: context.signal,
         maxTokens: 5000,
         validate: normalizePlan,
@@ -64,7 +64,7 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
     } catch (error) {
       if (context.signal?.aborted) throw error;
       planningWarning = `结构化规划降级：${error.message || error}`;
-      plan = fallbackPlan(context.job.companyName, context.job.instruction, selected);
+      plan = fallbackPlan(context.job.companyName, context.job.instruction, selected, context.job.outputLanguage);
     }
     return { ...context, plan, planningWarning };
   }
@@ -95,7 +95,7 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
     try {
       synthesis = await completeStructuredJson({
         model,
-        messages: buildIndustrySynthesisMessages({ topic: context.job.companyName, instruction: context.job.instruction, plan: context.plan, sources: context.sources }),
+        messages: buildIndustrySynthesisMessages({ topic: context.job.companyName, instruction: context.job.instruction, outputLanguage: context.job.outputLanguage, plan: context.plan, sources: context.sources }),
         signal: context.signal,
         maxTokens: 6000,
         validate: (value) => normalizeSynthesis(value, context.sources),
@@ -104,7 +104,7 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
     } catch (error) {
       if (context.signal?.aborted) throw error;
       synthesisWarning = `行业证据整理降级：${error.message || error}`;
-      synthesis = fallbackSynthesis(context.sources, synthesisWarning);
+      synthesis = fallbackSynthesis(context.sources, synthesisWarning, context.job.outputLanguage);
     }
     return { ...context, synthesis, synthesisWarning };
   }
@@ -113,6 +113,7 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
     const messages = buildIndustryReportMessages({
       topic: context.job.companyName,
       instruction: context.job.instruction,
+      outputLanguage: context.job.outputLanguage,
       researchTemplate: context.job.researchTemplate,
       plan: context.plan,
       synthesis: context.synthesis,
@@ -132,30 +133,30 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
         } });
         const best = redactSensitiveText(report || streamed);
         if (best.length >= 300) return { ...context, report: best };
-        lastError = `第 ${attempt} 次输出仅 ${best.length} 个字符`;
+        lastError = context.job.outputLanguage === "en" ? `attempt ${attempt} returned only ${best.length} characters` : `第 ${attempt} 次输出仅 ${best.length} 个字符`;
       } catch (error) {
         if (context.signal?.aborted) throw error;
         lastError = error.message || String(error);
       }
       emit(context, "stage", stageFor("report-generation", "running", `报告输出异常，正在自动重试（${attempt}/2）…`));
     }
-    const generationWarning = `行业研究报告输出异常：${lastError}`;
-    const report = buildIndustryFallback({ topic: context.job.companyName, researchTemplate: context.job.researchTemplate, synthesis: context.synthesis, sources: context.sources, warning: generationWarning });
+    const generationWarning = context.job.outputLanguage === "en" ? `Industry research report generation failed: ${lastError}` : `行业研究报告输出异常：${lastError}`;
+    const report = buildIndustryFallback({ topic: context.job.companyName, outputLanguage: context.job.outputLanguage, researchTemplate: context.job.researchTemplate, synthesis: context.synthesis, sources: context.sources, warning: generationWarning });
     emit(context, "report_delta", { delta: report });
     return { ...context, report, generationWarning };
   }
 
   async function qualityGate(context) {
-    const report = stabilizeIndustryResearchReport(context.report, { topic: context.job.companyName, researchTemplate: context.job.researchTemplate, sources: context.sources });
+    const report = stabilizeIndustryResearchReport(context.report, { topic: context.job.companyName, outputLanguage: context.job.outputLanguage, researchTemplate: context.job.researchTemplate, sources: context.sources });
     const warnings = [context.planningWarning, context.researchWarning, context.synthesisWarning, context.generationWarning];
-    return { ...context, report, quality: assessIndustryResearchQuality(report, { researchTemplate: context.job.researchTemplate, sources: context.sources, synthesis: context.synthesis, warnings }) };
+    return { ...context, report, quality: assessIndustryResearchQuality(report, { outputLanguage: context.job.outputLanguage, researchTemplate: context.job.researchTemplate, sources: context.sources, synthesis: context.synthesis, warnings }) };
   }
 
   async function persistReport(context) {
     await repository.saveReport(context.job.id, context.report);
     let pdfStoragePath = context.job.pdfStoragePath || "";
     if (pdfReportService && repository.savePdf) {
-      const pdf = await pdfReportService.render({ title: `${context.job.companyName} 行业研究报告`, markdown: context.report });
+      const pdf = await pdfReportService.render({ title: `${context.job.companyName} ${context.job.outputLanguage === "en" ? "Industry Research Report" : "行业研究报告"}`, markdown: context.report });
       pdfStoragePath = await repository.savePdf(context.job.id, pdf, { date: context.job.createdAt || now() });
     }
     const finalJob = { ...context.job, status: context.quality.ok ? "completed" : "needs_attention", reportAvailable: true, pdfStoragePath, quality: context.quality, sources: context.sources, analysis: context.synthesis, researchPlan: context.plan, researchWarning: context.researchWarning || "", generationWarning: context.generationWarning || "", extractionWarning: context.synthesisWarning || "", followupSuggestions: buildSuggestions(context), reanalysisInProgress: false, error: "", failedStep: "", completedAt: now() };
@@ -171,14 +172,13 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
   return { execute, steps: steps.map(({ key, label }) => ({ key, label })) };
 }
 
-export function createIndustryResearchJob({ topic, instruction, researchTemplate, steps, now = () => new Date().toISOString() }) {
+export function createIndustryResearchJob({ topic, instruction, outputLanguage = "zh", researchTemplate, steps, now = () => new Date().toISOString() }) {
   const createdAt = now();
   const name = String(topic || "").trim();
-  const selected = resolveIndustryResearchTemplate(researchTemplate);
-  return { id: `industry_${randomUUID().replace(/-/g, "").slice(0, 20)}`, taskType: "industry_research", companyName: name, title: `${name} · ${selected.label}`, instruction: String(instruction || `完成${selected.label}`).trim(), researchTemplate: Object.entries(INDUSTRY_TEMPLATE_LABELS).find(([, label]) => label === selected.label)?.[0] || "industry_overview", upload: null, status: "queued", stages: steps.map((step) => ({ ...step, status: "pending" })), checkpoints: {}, messages: [], createdAt, updatedAt: createdAt };
+  const normalizedLanguage = String(outputLanguage).toLowerCase().startsWith("en") ? "en" : "zh";
+  const selected = resolveIndustryResearchTemplate(researchTemplate, normalizedLanguage);
+  return { id: `industry_${randomUUID().replace(/-/g, "").slice(0, 20)}`, taskType: "industry_research", companyName: name, title: `${name} · ${selected.label}`, instruction: String(instruction || (normalizedLanguage === "en" ? `Complete a ${selected.label.toLowerCase()} report` : `完成${selected.label}`)).trim(), outputLanguage: normalizedLanguage, researchTemplate: ["industry_overview", "technical", "commercial", "investment"].includes(researchTemplate) ? researchTemplate : "industry_overview", upload: null, status: "queued", stages: steps.map((step) => ({ ...step, status: "pending" })), checkpoints: {}, messages: [], createdAt, updatedAt: createdAt };
 }
-
-const INDUSTRY_TEMPLATE_LABELS = { industry_overview: "行业概览", technical: "技术研究", commercial: "商业前景", investment: "投资价值" };
 
 function normalizePlan(value) {
   const questions = array(value?.questions).slice(0, 12).map((item, index) => ({ id: String(item?.id || `q${index + 1}`), question: String(item?.question || "").trim(), importance: ["critical", "high", "medium", "low"].includes(item?.importance) ? item.importance : "medium", evidenceTypes: array(item?.evidenceTypes).map(String).slice(0, 6) })).filter((item) => item.question);
@@ -187,8 +187,9 @@ function normalizePlan(value) {
   return { objective: String(value?.objective || "").trim(), scope: value?.scope || {}, questions, queryGroups };
 }
 
-function fallbackPlan(topic, instruction, selected) {
+function fallbackPlan(topic, instruction, selected, outputLanguage) {
   const sections = selected.sections.slice(0, 8);
+  if (outputLanguage === "en") return { objective: `${selected.label}: ${topic}`, scope: { included: sections }, questions: sections.map((section, index) => ({ id: `q${index + 1}`, question: `What is the current state of ${section.toLowerCase()} for ${topic}?`, importance: index < 3 ? "high" : "medium", evidenceTypes: ["official sources", "authoritative research"] })), queryGroups: sections.slice(0, 6).map((section, index) => ({ id: `g${index + 1}`, queries: [`${topic} ${section}`, instruction ? `${topic} ${instruction} ${section}` : ""].filter(Boolean), preferredSources: ["official", "regulatory", "research institutions", "papers"] })) };
   return { objective: `${selected.label}：${topic}`, scope: { included: sections }, questions: sections.map((section, index) => ({ id: `q${index + 1}`, question: `${topic}的${section}如何？`, importance: index < 3 ? "high" : "medium", evidenceTypes: ["官方资料", "权威研究"] })), queryGroups: sections.slice(0, 6).map((section, index) => ({ id: `g${index + 1}`, queries: [`${topic} ${section}`, instruction ? `${topic} ${instruction} ${section}` : ""].filter(Boolean), preferredSources: ["官方", "监管", "研究机构", "论文"] })) };
 }
 
@@ -197,7 +198,8 @@ function normalizeSynthesis(value, sources) {
   return { findings: array(value?.findings).slice(0, 50).map((item) => ({ ...item, sourceIds: array(item?.sourceIds).map(String).filter((id) => ids.has(id)) })), risks: array(value?.risks).slice(0, 30), unknowns: array(value?.unknowns).map(String).slice(0, 30) };
 }
 
-function fallbackSynthesis(sources, warning) {
+function fallbackSynthesis(sources, warning, outputLanguage) {
+  if (outputLanguage === "en") return { findings: sources.slice(0, 20).map((source) => ({ domain: "Public Sources", statement: source.snippet || source.title, sourceIds: [source.id], confidence: source.sourceTier === "primary" ? "high" : "medium", nature: "source_claim" })), risks: [{ description: "Public evidence remains limited; material market figures and investment judgments require further verification." }], unknowns: [warning] };
   return { findings: sources.slice(0, 20).map((source) => ({ domain: "公开资料", statement: source.snippet || source.title, sourceIds: [source.id], confidence: source.sourceTier === "primary" ? "high" : "medium", nature: "source_claim" })), risks: [{ description: "公开证据仍有限，关键市场数字和投资判断需继续核验" }], unknowns: [warning] };
 }
 

@@ -9,7 +9,7 @@ import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evid
 import { renderFollowupSuggestions } from "./followup-suggestions.js";
 import { renderHistoryList } from "./history-list.js";
 import { refreshHealthStatus } from "./health-status.js";
-import { applyDocumentTranslations, bindLanguageToggle, t } from "./i18n.js";
+import { applyDocumentTranslations, bindLanguageToggle, getLanguage, t } from "./i18n.js";
 import { requestJson, requestResponse } from "./http-client.js";
 import { downloadConversationPdf, downloadReviewPdf, syncConversationPdfButton } from "./pdf-download.js";
 import { applyDetectedCompany } from "./review-identity.js";
@@ -206,6 +206,7 @@ async function submitComposer(event) {
       currentReview: state.currentReview,
       companyName,
       instruction: prompt || t("instruction.bp", { zh: "全面核查这份 BP" }),
+      outputLanguage: getLanguage(),
       file,
       data
     });

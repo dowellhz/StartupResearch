@@ -23,7 +23,7 @@ export function buildConversationExport(review) {
       message: String(stage?.message || "")
     })),
     report: normalizeReviewReport(review),
-    reportLabel: reportLabel(taskType),
+    reportLabel: reportLabel(taskType, review?.outputLanguage),
     quality: review?.quality || null,
     evidenceRefresh: review?.lastEvidenceRefresh?.report ? {
       title: "公开资料刷新",
@@ -42,7 +42,8 @@ function defaultInstruction(taskType) {
   return ({ company_pre_research: "基于公开信息完成公司预研", industry_research: "完成行业概览研究", paper_analysis: "解读论文的技术、可信度与商业化价值" })[taskType] || "全面核查这份 BP";
 }
 
-function reportLabel(taskType) {
+function reportLabel(taskType, outputLanguage) {
+  if (outputLanguage === "en") return ({ company_pre_research: "Company Research Report", industry_research: "Industry Research Report", paper_analysis: "Paper Analysis Report" })[taskType] || "BP Review Report";
   return ({ company_pre_research: "公司预研报告", industry_research: "行业研究报告", paper_analysis: "论文解读报告" })[taskType] || "BP 核查报告";
 }
 

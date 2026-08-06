@@ -1,4 +1,5 @@
-import { REPORT_SECTIONS } from "./review-prompts.js";
+import { reportSections } from "./review-prompts.js";
+import { isEnglishOutput } from "./report-language.js";
 import { hasEvidenceExcerpt, normalizeEvidenceSources } from "./research-evidence-service.js";
 import { buildBpConclusionSummary, ensureLeadingSummary } from "./report-summary-service.js";
 
@@ -14,7 +15,7 @@ export function assessReportQuality(markdown, options = {}) {
   const sources = normalizeEvidenceSources(options.sources || []);
   const sourceCount = sources.length || Number(options.sourceCount || 0);
   const components = {
-    structure: assessStructure(text, findings),
+    structure: assessStructure(text, findings, options.outputLanguage),
     evidence: assessEvidence(text, { ...options, sources, sourceCount }, findings),
     extraction: assessExtraction(options.document, findings),
     reasoning: assessReasoning(text, sources, findings),
@@ -43,45 +44,58 @@ export function assessReportQuality(markdown, options = {}) {
 export function stabilizeReport(markdown, options = {}) {
   const companyName = options.companyName;
   const sourceCount = Number(options.sourceCount ?? options.sources?.length ?? 0);
+  const english = isEnglishOutput(options.outputLanguage);
+  const sections = reportSections(options.outputLanguage);
   let result = String(markdown || "").trim();
-  if (!result) result = `# ${companyName || "未命名公司"} BP 核查报告`;
-  result = ensureLeadingSummary(result, {
+  if (!result) result = `# ${companyName || (english ? "Unnamed Company" : "未命名公司")} ${english ? "BP Review Report" : "BP 核查报告"}`;
+  result = ensureLeadingSummary(result, english ? {
+    heading: "Review Conclusion Summary",
+    aliases: ["Conclusion Summary", "BP Review Summary"],
+    fallback: "This report is a preliminary investment review. Material claims require independent verification through primary documents and due diligence."
+  } : {
     heading: "核查结论摘要",
     aliases: ["内容核查结论摘要", "BP 核查结论摘要", "结论摘要"],
     fallback: buildBpConclusionSummary(options)
   });
-  for (const section of REPORT_SECTIONS) {
+  for (const section of sections) {
     if (!result.includes(`## ${section}`)) {
-      result += `\n\n## ${section}\n\n${fallbackSection(section, sourceCount)}`;
+      result += `\n\n## ${section}\n\n${fallbackSection(section, sourceCount, english)}`;
     }
   }
-  if (!sourceCount && !/联网检索.*失败|公开来源不足/.test(result)) {
-    result += "\n\n> 核查限制：本次联网检索未形成可用公开来源，相关判断仅基于 BP 自述与模型分析，需独立尽调。";
+  const gapPattern = english ? /public (?:sources|research).*(?:unavailable|insufficient|no usable)/i : /联网检索.*失败|公开来源不足/;
+  if (!sourceCount && !gapPattern.test(result)) {
+    result += english
+      ? "\n\n> Review limitation: this run produced no usable public sources. The findings rely on BP claims and model analysis and require independent due diligence."
+      : "\n\n> 核查限制：本次联网检索未形成可用公开来源，相关判断仅基于 BP 自述与模型分析，需独立尽调。";
   }
   return result.trim();
 }
 
-function assessStructure(text, findings) {
+function assessStructure(text, findings, outputLanguage) {
   let score = 0;
   if (text.length >= 1800) score += 5;
   else findings.push(finding("report_too_short", "fatal", "报告正文过短"));
   let validSections = 0;
-  for (const section of REPORT_SECTIONS) {
+  const sections = reportSections(outputLanguage);
+  for (const section of sections) {
     const count = text.split(`## ${section}`).length - 1;
     if (count === 1) validSections += 1;
     else findings.push(finding("section_invalid", "fatal", `章节“${section}”应出现一次，实际 ${count} 次`));
   }
-  score += Math.round((validSections / REPORT_SECTIONS.length) * 10);
+  score += Math.round((validSections / sections.length) * 10);
   if (/\|[^\n]+\|[^\n]+\|/.test(text)) score += 5;
   else findings.push(finding("verification_table_missing", "fatal", "缺少关键声明核查表"));
-  if (/(仅BP自述|资料不足|分析推断)/.test(text)) score += 5;
+  if (isEnglishOutput(outputLanguage) ? /(BP[- ]only|insufficient (?:data|evidence)|analytical inference)/i.test(text) : /(仅BP自述|资料不足|分析推断)/.test(text)) score += 5;
   else findings.push(finding("evidence_status_missing", "warn", "未明确区分自述与核验状态"));
   return score;
 }
 
-function assessEvidence(text, { sources, sourceCount, crossCheck }, findings) {
+function assessEvidence(text, { sources, sourceCount, crossCheck, outputLanguage }, findings) {
   if (!sourceCount) {
-    if (!/(联网检索.*失败|未形成可核验.*公开|公开来源不足)/.test(text)) {
+    const disclosesGap = isEnglishOutput(outputLanguage)
+      ? /(?:no usable|insufficient|unavailable).{0,40}public (?:sources|evidence)|public (?:sources|evidence).{0,40}(?:insufficient|unavailable)/i.test(text)
+      : /(联网检索.*失败|未形成可核验.*公开|公开来源不足)/.test(text);
+    if (!disclosesGap) {
       findings.push(finding("source_gap_not_disclosed", "warn", "联网来源为空但报告未披露限制"));
     }
     findings.push(finding("public_evidence_missing", "warn", "本次报告没有形成公开证据"));
@@ -194,7 +208,12 @@ function buildQualityMetrics({ text, sources, crossCheck, document, businessAudi
   };
 }
 
-function fallbackSection(section, sourceCount) {
+function fallbackSection(section, sourceCount, english = false) {
+  if (english && section === "Key Claims Verification Table") {
+    return "| Claim | BP Evidence | Public Verification | Assessment | Confidence | Next Step |\n|---|---|---|---|---|---|\n| Key operating and market claims | See uploaded material | Insufficient evidence in this run | Insufficient evidence | Low | Obtain underlying data and verify through interviews |";
+  }
+  if (english && section === "References") return sourceCount ? "See citations in the report body." : "No usable public sources were produced in this run.";
+  if (english) return "The available material is insufficient; verify this area through subsequent due diligence.";
   if (section === "关键声明核查表") {
     return "| 声明 | BP依据 | 公开核验 | 判断 | 置信度 | 下一步 |\n|---|---|---|---|---|---|\n| 关键经营与市场声明 | 见上传材料 | 本次未形成充分证据 | 资料不足 | 低 | 索取底层数据并访谈核实 |";
   }

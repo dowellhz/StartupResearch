@@ -89,7 +89,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     try {
       analysis = await completeStructuredJson({
         model,
-        messages: buildExtractionMessages({ companyName: context.job.companyName, instruction: context.job.instruction, document: context.document }),
+        messages: buildExtractionMessages({ companyName: context.job.companyName, instruction: context.job.instruction, outputLanguage: context.job.outputLanguage, document: context.document }),
         signal: context.signal,
         maxTokens: 6000,
         validate: validateAnalysis,
@@ -189,6 +189,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     const messages = buildReportMessages({
       companyName: context.job.companyName || context.analysis.companyProfile?.companyName,
       instruction: context.job.instruction,
+      outputLanguage: context.job.outputLanguage,
       document: context.document,
       analysis: context.analysis,
       businessAudit: context.businessAudit,
@@ -218,14 +219,16 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
         });
         const bestReport = redactSensitiveText(report || streamed);
         if (bestReport.length >= 300) return { ...context, report: bestReport };
-        lastError = `第 ${attempt} 次输出仅 ${bestReport.length} 个字符`;
+        lastError = context.job.outputLanguage === "en" ? `attempt ${attempt} returned only ${bestReport.length} characters` : `第 ${attempt} 次输出仅 ${bestReport.length} 个字符`;
       } catch (error) {
         if (context.signal?.aborted) throw error;
         lastError = error.message || String(error);
       }
       emit(context, "stage", stageFor("report-generation", "running", `长报告输出异常，正在自动重试（${attempt}/2）…`));
     }
-    const generationWarning = `DeepSeek 长报告输出异常：${lastError}。已使用结构化阶段结果生成可恢复报告。`;
+    const generationWarning = context.job.outputLanguage === "en"
+      ? `DeepSeek full-report generation failed: ${lastError}. A recoverable report was created from the structured-stage results.`
+      : `DeepSeek 长报告输出异常：${lastError}。已使用结构化阶段结果生成可恢复报告。`;
     const report = redactSensitiveText(buildFallbackReport({
       companyName: context.job.companyName,
       analysis: context.analysis,
@@ -233,7 +236,8 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       claimLedger: context.claimLedger,
       investmentAnalysis: context.investmentAnalysis,
       sources: context.sources,
-      warning: generationWarning
+      warning: generationWarning,
+      outputLanguage: context.job.outputLanguage
     }));
     emit(context, "report_delta", { delta: report });
     return { ...context, report, generationWarning };
@@ -242,12 +246,14 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
   async function qualityGate(context) {
     const stabilized = stabilizeReport(context.report, {
       companyName: context.job.companyName,
+      outputLanguage: context.job.outputLanguage,
       sources: context.sources,
       analysis: context.analysis,
       claimLedger: context.claimLedger,
       investmentAnalysis: context.investmentAnalysis
     });
     const quality = assessReportQuality(stabilized, {
+      outputLanguage: context.job.outputLanguage,
       sources: context.sources,
       crossCheck: context.crossCheck,
       businessAudit: context.businessAudit,
@@ -279,7 +285,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     let pdfStoragePath = context.job.pdfStoragePath || "";
     if (pdfReportService && typeof repository.savePdf === "function") {
       const pdf = await pdfReportService.render({
-        title: `${context.job.companyName || "未命名公司"} BP 核查报告`,
+        title: `${context.job.companyName || (context.job.outputLanguage === "en" ? "Unnamed Company" : "未命名公司")} ${context.job.outputLanguage === "en" ? "BP Review Report" : "BP 核查报告"}`,
         markdown: context.report
       });
       pdfStoragePath = await repository.savePdf(context.job.id, pdf, { date: context.job.createdAt || now() });
@@ -331,7 +337,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
   return { execute, steps: steps.map(({ key, label }) => ({ key, label })) };
 }
 
-export function createReviewJob({ companyName, instruction, upload, steps, now = () => new Date().toISOString() }) {
+export function createReviewJob({ companyName, instruction, outputLanguage = "zh", upload, steps, now = () => new Date().toISOString() }) {
   const createdAt = now();
   return {
     id: `bp_${randomUUID().replace(/-/g, "").slice(0, 20)}`,
@@ -339,6 +345,7 @@ export function createReviewJob({ companyName, instruction, upload, steps, now =
     companyName: String(companyName || "").trim(),
     title: `${String(companyName || "").trim() || "正在识别公司"} BP 核查`,
     instruction: String(instruction || "").trim(),
+    outputLanguage: String(outputLanguage).toLowerCase().startsWith("en") ? "en" : "zh",
     upload,
     status: "queued",
     stages: steps.map((step) => ({ ...step, status: "pending" })),
@@ -383,13 +390,14 @@ function validateAnalysis(analysis) {
 
 function fallbackAnalysis(context, warning) {
   const companyName = context.job.companyName || "";
+  const english = context.job.outputLanguage === "en";
   return {
     companyProfile: { companyName },
     claims: [],
     businessAudit: { metrics: [], checks: [], assumptions: [] },
-    risks: [{ category: "数据质量", description: "结构化声明提取未形成有效 JSON，报告需结合 BP 原文复核", severity: "high", basis: warning }],
+    risks: [{ category: english ? "Data Quality" : "数据质量", description: english ? "Structured claim extraction did not produce valid JSON; verify the report against the original BP." : "结构化声明提取未形成有效 JSON，报告需结合 BP 原文复核", severity: "high", basis: warning }],
     searchQueries: companyName ? [`${companyName} 公司 团队 产品 融资`] : [],
-    missingInformation: ["结构化关键声明清单需人工复核"],
+    missingInformation: [english ? "The structured key-claims list requires manual verification." : "结构化关键声明清单需人工复核"],
     warning
   };
 }

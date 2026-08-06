@@ -1,6 +1,8 @@
-import { REPORT_SECTIONS } from "./review-prompts.js";
+import { REPORT_SECTIONS, REPORT_SECTIONS_EN } from "./review-prompts.js";
+import { isEnglishOutput } from "./report-language.js";
 
-export function buildFallbackReport({ companyName, analysis = {}, businessAudit = {}, claimLedger = {}, investmentAnalysis = {}, sources = [], warning = "" } = {}) {
+export function buildFallbackReport({ companyName, analysis = {}, businessAudit = {}, claimLedger = {}, investmentAnalysis = {}, sources = [], warning = "", outputLanguage = "zh" } = {}) {
+  if (isEnglishOutput(outputLanguage)) return buildEnglishFallback({ companyName, analysis, sources, warning });
   investmentAnalysis ||= {};
   const claims = Array.isArray(analysis.claims) ? analysis.claims : [];
   const risks = Array.isArray(analysis.risks) ? analysis.risks : [];
@@ -25,6 +27,21 @@ export function buildFallbackReport({ companyName, analysis = {}, businessAudit 
     ["参考来源", sourcesText(sources)]
   ]);
   return `# ${companyName || "未识别公司"} BP 核查报告（阶段性）\n\n> 生成提示：长报告生成异常，系统保留已有分析并自动形成此阶段性版本。\n\n${REPORT_SECTIONS.map((section) => `## ${section}\n\n${sections.get(section) || "本次未形成可核验信息。"}`).join("\n\n")}`;
+}
+
+function buildEnglishFallback({ companyName, analysis = {}, sources = [], warning = "" }) {
+  const claims = Array.isArray(analysis.claims) ? analysis.claims : [];
+  const risks = Array.isArray(analysis.risks) ? analysis.risks : [];
+  const references = sources.length ? sources.slice(0, 24).map((source) => `- [${source.title || source.url}](${source.url})`).join("\n") : "No usable public sources were produced in this run.";
+  const generic = "The available material is insufficient for a definitive conclusion. Verify this area using primary documents and independent due diligence.";
+  const sections = Object.fromEntries(REPORT_SECTIONS_EN.map((section) => [section, generic]));
+  sections["Review Conclusion Summary"] = `The model could not produce a stable full-length report, so the system retained a recoverable preliminary report from the structured results. ${warning}\n\nThe run extracted ${claims.length} BP claims, ${risks.length} risks, and ${sources.length} public sources.`;
+  sections["Company and Product"] = [analysis.companyProfile?.oneLiner, analysis.companyProfile?.stage, analysis.companyProfile?.sector].filter(Boolean).map((item) => `- ${item}`).join("\n") || generic;
+  sections["Key Claims Verification Table"] = "| Claim | BP Evidence | Public Verification | Assessment | Confidence | Next Step |\n|---|---|---|---|---|---|\n| Key operating and market claims | See uploaded material | Insufficient evidence in this run | BP-only | Low | Obtain underlying data and independent evidence |";
+  sections["Core Risks and Red Flags"] = risks.length ? risks.map((risk) => `- **${risk.category || "Risk"}**: ${risk.description || risk.basis || "Further verification required"}`).join("\n") : generic;
+  sections["Recommendations and Next Steps"] = "Prioritize high-importance claims and obtain corporate, financial, customer, technical, and intellectual-property records for verification.";
+  sections.References = references;
+  return `# ${companyName || "Unidentified Company"} BP Review Report (Preliminary)\n\n> Generation note: the full-report generation failed, so this recoverable preliminary version preserves the available analysis.\n\n${REPORT_SECTIONS_EN.map((section) => `## ${section}\n\n${sections[section]}`).join("\n\n")}`;
 }
 
 function marketSizingText(market = {}) {
