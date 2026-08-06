@@ -4,19 +4,31 @@ import { createCompanyPreResearchJob } from "./company-pre-research-pipeline.js"
 import { publicRefresh } from "./evidence-refresh-service.js";
 import { buildFollowupMessages } from "./review-prompts.js";
 import { normalizeReviewReport } from "./report-summary-service.js";
+import { createSpecialResearchTaskService, INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./special-research-task-service.js";
 import { transitionReview } from "./review-state-machine.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
 
-export function createReviewManagerService({ pipeline, companyResearchPipeline, repository, model, evidenceRefreshService, now = () => new Date().toISOString() }) {
+export function createReviewManagerService({ pipeline, companyResearchPipeline, industryResearchPipeline, paperAnalysisPipeline, repository, model, evidenceRefreshService, now = () => new Date().toISOString() }) {
   const subscribers = new Map();
   const controllers = new Map();
   const refreshControllers = new Map();
   const deletedIds = new Set();
   const pendingCreates = new Map();
+  const specialResearchTasks = createSpecialResearchTaskService({
+    repository,
+    industryResearchPipeline,
+    paperAnalysisPipeline,
+    pendingCreates,
+    now,
+    enqueue: (id) => queueMicrotask(() => run(id).catch(() => {}))
+  });
 
-  async function create({ taskType = "attachment_review", companyName, instruction, upload }, { ownerId } = {}) {
+  async function create({ taskType = "attachment_review", companyName, instruction, upload, researchTemplate, sourceUrl }, { ownerId } = {}) {
     assertOwnerId(ownerId);
     if (taskType === "company_pre_research") return createCompanyResearch({ companyName, instruction }, { ownerId });
+    if (specialResearchTasks.handles(taskType)) {
+      return publicJob(await specialResearchTasks.create({ taskType, companyName, instruction, upload, researchTemplate, sourceUrl }, { ownerId }));
+    }
     if (!upload?.data || !upload?.filename) throw new Error("请先上传商业计划书");
     const buffer = Buffer.from(upload.data, "base64");
     const uploadHash = createHash("sha256").update(buffer).digest("hex");
@@ -93,7 +105,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     assertNoEvidenceRefresh(existing);
     if (existing.status === "running") throw new Error("任务正在运行，无需重复提交");
     const selectedPipeline = pipelineFor(existing);
-    if (taskTypeOf(existing) === "attachment_review") {
+    if (["attachment_review", PAPER_ANALYSIS].includes(taskTypeOf(existing)) && !existing.sourceUrl) {
       const upload = await repository.getUpload?.(id, existing.upload?.storagePath);
       if (!upload?.length) throw new Error("原始 BP 未保存，请重新上传文件发起核查");
     }
@@ -195,6 +207,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   async function refreshEvidence(id, { ownerId } = {}) {
     if (!evidenceRefreshService) throw new Error("公开资料刷新服务未启用");
     const existing = await requireOwnedJob(id, ownerId);
+    if ([INDUSTRY_RESEARCH, PAPER_ANALYSIS].includes(taskTypeOf(existing))) throw new Error("该研究类型暂不支持公司公开资料刷新，请使用重新研究或继续追问");
     if (!["completed", "needs_attention"].includes(existing.status) || !existing.reportAvailable) {
       throw new Error(taskTypeOf(existing) === "company_pre_research" ? "请等待公司预研报告完成后再刷新公开资料" : "请等待 BP 核查报告完成后再刷新公开资料");
     }
@@ -324,6 +337,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
       if (!companyResearchPipeline) throw new Error("公司预研服务未启用");
       return companyResearchPipeline;
     }
+    const specialPipeline = specialResearchTasks.pipelineFor(taskTypeOf(job));
+    if (specialPipeline) return specialPipeline;
     return pipeline;
   }
 
@@ -412,7 +427,7 @@ function array(value) {
 }
 
 function recoverableRestartKey(job) {
-  if (job.extractionWarning) return taskTypeOf(job) === "company_pre_research" ? "fact-extraction" : "claim-extraction";
+  if (job.extractionWarning) return ({ company_pre_research: "fact-extraction", industry_research: "evidence-synthesis", paper_analysis: "metadata-extraction" })[taskTypeOf(job)] || "claim-extraction";
   if (job.investmentAnalysisWarning) return "investment-analysis";
   if (job.generationWarning) return "report-generation";
   return "";
@@ -450,5 +465,6 @@ function normalizeComparable(value) {
 }
 
 function taskTypeOf(job) {
-  return job?.taskType === "company_pre_research" ? "company_pre_research" : "attachment_review";
+  if (["company_pre_research", INDUSTRY_RESEARCH, PAPER_ANALYSIS].includes(job?.taskType)) return job.taskType;
+  return "attachment_review";
 }

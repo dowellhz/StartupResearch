@@ -165,7 +165,7 @@ export function createLinkedPageResearchService({
     }
   }
 
-  return { expand };
+  return { expand, fetchPage };
 }
 
 export async function assertPublicUrl(input, resolveHostname = resolvePublicHostname) {

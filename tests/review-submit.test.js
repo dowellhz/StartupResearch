@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { submitCompanyPreResearch, submitUploadedBp } from "../public/review-submit.js";
+import { submitCompanyPreResearch, submitIndustryResearch, submitPaperAnalysis, submitUploadedBp } from "../public/review-submit.js";
 
 test("company pre-research submits an explicit task type without an attachment", async () => {
   let request;
@@ -12,6 +12,16 @@ test("company pre-research submits an explicit task type without an attachment",
     companyName: "示例科技",
     instruction: "关注团队"
   });
+});
+
+test("industry research and paper analysis submit explicit payloads", async () => {
+  const requests = [];
+  const requestJson = async (_url, options) => { requests.push(JSON.parse(options.body)); return { ok: true }; };
+  await submitIndustryResearch({ requestJson, topic: "低空经济", instruction: "关注投资", researchTemplate: "investment" });
+  await submitPaperAnalysis({ requestJson, title: "Paper", instruction: "关注复现", sourceUrl: "https://arxiv.org/abs/1" });
+  assert.deepEqual(requests[0], { taskType: "industry_research", companyName: "低空经济", instruction: "关注投资", researchTemplate: "investment" });
+  assert.equal(requests[1].taskType, "paper_analysis");
+  assert.equal(requests[1].sourceUrl, "https://arxiv.org/abs/1");
 });
 
 test("an attachment dragged into a company research conversation starts the original attachment flow", async () => {

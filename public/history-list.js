@@ -40,6 +40,6 @@ function relativeDate(value) {
 }
 
 function statusLabel(status, taskType) {
-  if (status === "running") return taskType === "company_pre_research" ? "预研中" : "核查中";
+  if (status === "running") return ({ company_pre_research: "预研中", industry_research: "行业研究中", paper_analysis: "论文解读中" })[taskType] || "核查中";
   return ({ queued: "排队中", completed: "已完成", needs_attention: "需关注", failed: "失败" })[status] || status;
 }

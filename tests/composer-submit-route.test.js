@@ -5,7 +5,9 @@ import {
   COMPANY_RESEARCH_SUBMISSION,
   CONFIRM_COMPANY_RESEARCH_SUBMISSION,
   decideComposerSubmission,
-  FOLLOWUP_SUBMISSION
+  FOLLOWUP_SUBMISSION,
+  INDUSTRY_RESEARCH_SUBMISSION,
+  PAPER_ANALYSIS_SUBMISSION
 } from "../public/composer-submit-route.js";
 
 test("an attachment keeps the existing BP review flow without confirmation", () => {
@@ -14,6 +16,11 @@ test("an attachment keeps the existing BP review flow without confirmation", () 
     hasFile: true
   });
   assert.equal(result, ATTACHMENT_SUBMISSION);
+});
+
+test("industry and paper modes submit their explicit research task types", () => {
+  assert.equal(decideComposerSubmission({ taskType: "industry_research" }), INDUSTRY_RESEARCH_SUBMISSION);
+  assert.equal(decideComposerSubmission({ taskType: "paper_analysis" }), PAPER_ANALYSIS_SUBMISSION);
 });
 
 test("a completed conversation without a new file remains a follow-up", () => {

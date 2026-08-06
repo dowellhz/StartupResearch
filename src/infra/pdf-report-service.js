@@ -49,7 +49,7 @@ function renderConversationHeader(doc, conversation, generatedAt) {
   doc.moveDown(0.65).fillColor("#20201d").fontSize(21).text(conversation.title, { lineGap: 4 });
   setPdfFont(doc, { role: "sans" });
   doc.moveDown(0.35).fillColor("#76736d").fontSize(8.5).text(
-    `${conversation.taskType === "company_pre_research" ? "公司预研" : "附件核查"} · ${statusText(conversation.status)} · 导出于 ${formatDate(generatedAt)}`
+    `${conversationTaskLabel(conversation.taskType)} · ${statusText(conversation.status)} · 导出于 ${formatDate(generatedAt)}`
   );
   doc.moveDown(1.1);
 }
@@ -94,7 +94,7 @@ function renderConversationReport(doc, conversation) {
   doc.save().roundedRect(left, top, width, 46, 8).fillAndStroke("#f2eee7", "#dedad1").restore();
   setPdfFont(doc, { role: "sans", bold: true });
   doc.fillColor("#b9573d").fontSize(7.5).text(
-    conversation.taskType === "company_pre_research" ? "COMPANY RESEARCH REPORT" : "BP REVIEW REPORT",
+    conversationReportEyebrow(conversation.taskType),
     left + 14,
     top + 9,
     { characterSpacing: 0.8 }
@@ -109,6 +109,14 @@ function renderConversationReport(doc, conversation) {
   doc.y = top + 55;
   renderMarkdownDocument(doc, conversation.report, "");
   doc.moveDown(0.9);
+}
+
+function conversationTaskLabel(taskType) {
+  return ({ company_pre_research: "公司预研", industry_research: "行业研究", paper_analysis: "论文解读" })[taskType] || "附件核查";
+}
+
+function conversationReportEyebrow(taskType) {
+  return ({ company_pre_research: "COMPANY RESEARCH REPORT", industry_research: "INDUSTRY RESEARCH REPORT", paper_analysis: "PAPER ANALYSIS REPORT" })[taskType] || "BP REVIEW REPORT";
 }
 
 function renderEvidenceRefresh(doc, refresh) {

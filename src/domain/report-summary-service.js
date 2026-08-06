@@ -64,7 +64,8 @@ export function buildCompanyResearchConclusionSummary({ companyName, sources = [
 export function normalizeReviewReport(review, markdown = review?.report) {
   const text = String(markdown || "").trim();
   if (text && !/^#[ \t]+/m.test(text)) return text;
-  const taskType = review?.taskType === "company_pre_research" ? "company_pre_research" : "attachment_review";
+  const taskType = review?.taskType || "attachment_review";
+  if (["industry_research", "paper_analysis"].includes(taskType)) return text;
   if (taskType === "company_pre_research") {
     return ensureLeadingSummary(text, {
       heading: COMPANY_SUMMARY_HEADING,

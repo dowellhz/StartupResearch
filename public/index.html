@@ -16,11 +16,19 @@
         </div>
         <div><strong>VentureLens</strong><span>投资研究工作台</span></div>
       </div>
-      <button class="new-review" id="newReviewButton">
-        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-        新建 BP 核查
-        <kbd>⌘ K</kbd>
-      </button>
+      <div class="new-task-actions" aria-label="新建研究任务">
+        <button class="new-review" id="newReviewButton">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          新建 BP 核查
+          <kbd>⌘ K</kbd>
+        </button>
+        <button class="new-research-task" id="newIndustryResearchButton" type="button">
+          <span>行</span><strong>行业研究</strong><small>公开资料与论文</small>
+        </button>
+        <button class="new-research-task" id="newPaperAnalysisButton" type="button">
+          <span>论</span><strong>论文解读</strong><small>PDF 或论文 URL</small>
+        </button>
+      </div>
       <div class="history-label">最近核查</div>
       <nav class="history-list" id="historyList" aria-label="历史核查"></nav>
       <div class="sidebar-bottom">
@@ -69,6 +77,19 @@
           <div><strong>公司预研</strong><span>无需附件，将抓取公司公开信息</span></div>
           <button id="exitResearchMode" type="button" aria-label="退出公司预研">×</button>
         </div>
+        <div class="research-preview industry-preview hidden" id="industryResearchPreview">
+          <div class="research-icon">行</div>
+          <div><strong>行业研究</strong><span>公开资料、论文、技术与投资视角</span></div>
+          <label>研究类型<select id="industryResearchTemplate"><option value="industry_overview">行业概览</option><option value="technical">技术研究</option><option value="commercial">商业前景</option><option value="investment">投资价值</option></select></label>
+          <button id="exitIndustryResearchMode" type="button" aria-label="退出行业研究">×</button>
+        </div>
+        <div class="research-preview paper-preview hidden" id="paperAnalysisPreview">
+          <div class="research-icon">论</div>
+          <div><strong>论文解读</strong><span>上传 PDF 或填写公开论文 URL</span></div>
+          <input id="paperUrlInput" type="url" placeholder="https://arxiv.org/abs/…" aria-label="论文 URL">
+          <button class="paper-upload-button" id="paperUploadButton" type="button">上传 PDF</button>
+          <button id="exitPaperAnalysisMode" type="button" aria-label="退出论文解读">×</button>
+        </div>
         <form class="composer" id="composer">
           <input id="fileInput" type="file" accept=".pdf,.pptx,.docx,.txt,.md,application/pdf" hidden>
           <button class="attach-button" id="attachButton" type="button" aria-label="添加内容" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
@@ -96,6 +117,7 @@
     <p class="eyebrow">HOW IT WORKS</p>
     <h2>核查不是复述 BP</h2>
     <p>系统会把 BP 内容视作待核实的公司自述，区分公开支持、存在冲突、仅 BP 自述、资料不足和分析推断。联网检索失败时仍会保留已有草稿，并明确披露限制。</p>
+    <p>左侧可直接发起行业研究或论文解读。行业研究支持行业概览、技术研究、商业前景和投资价值；论文解读支持上传 PDF 或填写公开论文 URL。</p>
     <p>支持 PDF、PPTX、DOCX、TXT 和 Markdown，默认最大 20 MB。</p>
     <p>无需登录。系统使用长期匿名浏览器 Cookie 隔离任务，同一浏览器再次打开仍能看到自己的历史、报告与聊天；清除 Cookie、使用无痕模式或更换浏览器后会成为新的匿名用户。</p>
   </dialog>

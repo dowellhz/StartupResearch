@@ -1,24 +1,28 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
 import { bindComposerInput } from "./composer-keyboard.js";
 import { createComposerDraftController, lastUserInput } from "./composer-draft.js";
-import { ATTACHMENT_SUBMISSION, CANCEL_SUBMISSION, COMPANY_RESEARCH_SUBMISSION, CONFIRM_COMPANY_RESEARCH_SUBMISSION, decideComposerSubmission, FOLLOWUP_SUBMISSION } from "./composer-submit-route.js";
-import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, createComposerTaskModeController } from "./composer-task-mode.js";
+import { ATTACHMENT_SUBMISSION, CANCEL_SUBMISSION, COMPANY_RESEARCH_SUBMISSION, CONFIRM_COMPANY_RESEARCH_SUBMISSION, decideComposerSubmission, FOLLOWUP_SUBMISSION, INDUSTRY_RESEARCH_SUBMISSION, PAPER_ANALYSIS_SUBMISSION } from "./composer-submit-route.js";
+import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, INDUSTRY_RESEARCH, PAPER_ANALYSIS, createComposerTaskModeController, taskTypeForFileInput } from "./composer-task-mode.js";
 import { createConfirmationDialogController } from "./confirmation-dialog.js";
 import { bindFileDrop } from "./file-drop.js";
 import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evidence-refresh-ui.js";
 import { renderFollowupSuggestions } from "./followup-suggestions.js";
 import { renderHistoryList } from "./history-list.js";
+import { refreshHealthStatus } from "./health-status.js";
 import { requestJson, requestResponse } from "./http-client.js";
 import { downloadConversationPdf, downloadReviewPdf, syncConversationPdfButton } from "./pdf-download.js";
 import { applyDetectedCompany } from "./review-identity.js";
 import { applyRecoverableReport } from "./review-error.js";
-import { applyUploadRouting, fileToBase64, submitCompanyPreResearch, submitUploadedBp } from "./review-submit.js";
+import { applyUploadRouting, fileToBase64, submitUploadedBp } from "./review-submit.js";
 import { formatBytes, renderReviewRequest, stageStatusCopy } from "./review-request-message.js";
 import { enterUploadedBpCompanyContext, restoreCurrentCompanyContext, setUploadAnalysisState } from "./upload-company-context.js";
 import { sanitizeVisibleFilename } from "./privacy-redaction.js";
 import { renderQualitySummary } from "./quality-summary.js";
+import { createReanalyzeController } from "./reanalyze-controller.js";
+import { createResearchSubmissionController } from "./research-submission-controller.js";
 import { runFollowup } from "./followup-controller.js";
 import { renderStreamingMarkdown, STREAM_RENDER_INTERVAL } from "./streaming-markdown.js";
+import { supportsEvidenceRefresh, taskTypeLabels } from "./task-type-labels.js";
 const elements = {
   addMenu: document.querySelector("#addMenu"),
   attachButton: document.querySelector("#attachButton"),
@@ -37,15 +41,24 @@ const elements = {
   fileName: document.querySelector("#fileName"),
   filePreview: document.querySelector("#filePreview"),
   exitResearchMode: document.querySelector("#exitResearchMode"),
+  exitIndustryResearchMode: document.querySelector("#exitIndustryResearchMode"),
+  exitPaperAnalysisMode: document.querySelector("#exitPaperAnalysisMode"),
   helpButton: document.querySelector("#helpButton"),
   helpDialog: document.querySelector("#helpDialog"),
   historyList: document.querySelector("#historyList"),
+  industryResearchPreview: document.querySelector("#industryResearchPreview"),
+  industryResearchTemplate: document.querySelector("#industryResearchTemplate"),
   menuButton: document.querySelector("#menuButton"),
   messageStream: document.querySelector("#messageStream"),
   modelDot: document.querySelector("#modelDot"),
   modelText: document.querySelector("#modelText"),
   newReviewButton: document.querySelector("#newReviewButton"),
+  newIndustryResearchButton: document.querySelector("#newIndustryResearchButton"),
+  newPaperAnalysisButton: document.querySelector("#newPaperAnalysisButton"),
   noAttachmentDialog: document.querySelector("#noAttachmentDialog"),
+  paperAnalysisPreview: document.querySelector("#paperAnalysisPreview"),
+  paperUploadButton: document.querySelector("#paperUploadButton"),
+  paperUrlInput: document.querySelector("#paperUrlInput"),
   promptInput: document.querySelector("#promptInput"),
   removeFile: document.querySelector("#removeFile"),
   researchPreview: document.querySelector("#researchPreview"),
@@ -73,12 +86,16 @@ const taskMode = createComposerTaskModeController({ elements, state, clearAttach
 const noAttachmentConfirmation = createConfirmationDialogController({ dialog: elements.noAttachmentDialog });
 const evidenceRefreshController = createEvidenceRefreshController({ state, container: elements.messageStream, requestJson,
   connectEvents, notify: toast, scrollBottom, refreshHistory: loadHistory });
+const researchSubmission = createResearchSubmissionController({ elements, state, taskMode, requestJson, draft, setBusy, notify: toast,
+  showConversation, renderProgressPanel, connectEvents, loadHistory, clearFile });
+const reanalyzeCurrentReview = createReanalyzeController({ state, requestJson, renderProgress: renderProgressPanel, connectEvents,
+  notify: toast, labelFor: taskTypeLabels, confirmImpl: window.confirm.bind(window), disableButton: () => document.querySelector("[data-reanalyze]")?.setAttribute("disabled", "") });
 boot();
 
 async function boot() {
   bindEvents();
   draft.restore();
-  await Promise.all([checkHealth(), loadHistory()]);
+  await Promise.all([refreshHealthStatus({ requestJson, modelDot: elements.modelDot, modelText: elements.modelText }), loadHistory()]);
 }
 function bindEvents() {
   taskMode.bind();
@@ -88,6 +105,8 @@ function bindEvents() {
   elements.composer.addEventListener("submit", submitComposer);
   elements.conversationPdfButton.addEventListener("click", () => downloadConversationPdf(state.currentId));
   elements.newReviewButton.addEventListener("click", resetWorkspace);
+  elements.newIndustryResearchButton.addEventListener("click", () => { resetWorkspace(); taskMode.selectIndustryResearchMode(); elements.companyInput.focus(); });
+  elements.newPaperAnalysisButton.addEventListener("click", () => { resetWorkspace(); taskMode.selectPaperAnalysisMode(); elements.paperUrlInput.focus(); });
   elements.helpButton.addEventListener("click", () => elements.helpDialog.showModal());
   elements.closeHelp.addEventListener("click", () => elements.helpDialog.close());
   elements.menuButton.addEventListener("click", () => elements.sidebar.classList.toggle("open"));
@@ -108,16 +127,6 @@ function bindEvents() {
     elements.companyInput.focus();
   }));
 }
-async function checkHealth() {
-  try {
-    const payload = await requestJson("/api/health");
-    elements.modelDot.className = `status-dot ${payload.modelConfigured ? "online" : "offline"}`;
-    elements.modelText.textContent = payload.modelConfigured ? `${payload.model} 已连接` : "DeepSeek 未配置";
-  } catch {
-    elements.modelDot.className = "status-dot offline";
-    elements.modelText.textContent = "服务不可用";
-  }
-}
 async function loadHistory() {
   try {
     const payload = await requestJson("/api/reviews");
@@ -136,14 +145,17 @@ function selectFile(file) {
   if (!file) return;
   const allowed = ["pdf", "pptx", "docx", "txt", "md", "markdown"];
   const extension = file.name.split(".").pop().toLowerCase();
+  const fileTaskType = taskTypeForFileInput(state.taskType);
+  if (fileTaskType === PAPER_ANALYSIS && extension !== "pdf") return toast("论文解读仅支持 PDF 文件");
   if (!allowed.includes(extension)) return toast("请上传 PDF、PPTX、DOCX、TXT 或 Markdown");
   if (file.size > 20 * 1024 * 1024) return toast("文件不能超过 20 MB");
-  taskMode.selectAttachmentMode();
+  if (fileTaskType === PAPER_ANALYSIS) taskMode.selectPaperAnalysisMode();
+  else taskMode.selectAttachmentMode();
   state.file = file;
-  const attachmentReview = state.currentReview?.taskType === COMPANY_PRE_RESEARCH ? null : state.currentReview;
+  const attachmentReview = fileTaskType === PAPER_ANALYSIS || state.currentReview?.taskType !== ATTACHMENT_REVIEW ? null : state.currentReview;
   const matchingRequired = enterUploadedBpCompanyContext(elements.companyInput, attachmentReview);
   elements.fileName.textContent = sanitizeVisibleFilename(file.name);
-  elements.fileMeta.textContent = `${formatBytes(file.size)} · ${matchingRequired ? "提交后识别公司并判断是否新建对话" : "等待核查"}`;
+  elements.fileMeta.textContent = `${formatBytes(file.size)} · ${fileTaskType === PAPER_ANALYSIS ? "等待论文解读" : matchingRequired ? "提交后识别公司并判断是否新建对话" : "等待核查"}`;
   elements.filePreview.classList.remove("hidden");
 }
 
@@ -173,6 +185,8 @@ async function submitComposer(event) {
     taskMode.selectCompanyResearchMode();
     return startCompanyPreResearch(prompt);
   }
+  if (submission === INDUSTRY_RESEARCH_SUBMISSION) return researchSubmission.start(INDUSTRY_RESEARCH, prompt);
+  if (submission === PAPER_ANALYSIS_SUBMISSION) return researchSubmission.start(PAPER_ANALYSIS, prompt);
   if (submission !== ATTACHMENT_SUBMISSION) return;
   const companyName = elements.companyInput.value.trim();
   setUploadAnalysisState(elements, { active: true, matchingRequired: Boolean(state.currentReview?.reportAvailable) });
@@ -215,29 +229,7 @@ async function submitComposer(event) {
 }
 
 async function startCompanyPreResearch(prompt) {
-  const companyName = elements.companyInput.value.trim();
-  if (!companyName) return toast("公司预研需要填写公司名称");
-  setBusy(true);
-  try {
-    const instruction = prompt || "基于公开信息完成公司预研";
-    const payload = await submitCompanyPreResearch({ requestJson, companyName, instruction });
-    Object.assign(state, { currentId: payload.review.id, currentReview: payload.review, stages: payload.review.stages || [], report: "" });
-    showConversation();
-    elements.messageStream.innerHTML = "";
-    renderReviewRequest(elements.messageStream, { company: companyName, prompt: instruction, taskType: COMPANY_PRE_RESEARCH });
-    renderProgressPanel();
-    elements.conversationTitle.textContent = payload.review.title;
-    draft.clearCompany();
-    draft.clearPrompt();
-    elements.companyInput.value = companyName;
-    taskMode.selectAttachmentMode();
-    connectEvents(state.currentId);
-    await loadHistory();
-  } catch (error) {
-    toast(error.message);
-  } finally {
-    setBusy(false);
-  }
+  return researchSubmission.start(COMPANY_PRE_RESEARCH, prompt);
 }
 
 function connectEvents(id) {
@@ -374,7 +366,7 @@ function renderProgressPanel() {
       <div><strong>${escapeHtml(stage.label)}</strong><p>${escapeHtml(stage.message || stageStatusCopy(stage.status))}</p></div>
       <span class="stage-time">${stage.status === "running" ? "处理中" : ["completed", "restored"].includes(stage.status) ? "完成" : ""}</span>
     </div>`).join("");
-  const taskLabel = state.currentReview?.taskType === COMPANY_PRE_RESEARCH ? "公司预研" : "附件核查";
+  const taskLabel = taskTypeLabels(state.currentReview?.taskType).task;
   panel.querySelector(".progress-header strong").textContent = `${taskLabel}${state.currentReview?.reportAvailable ? "已完成" : "进行中"}`;
   panel.querySelector(".progress-badge").textContent = state.currentReview?.reportAvailable ? "DONE" : "LIVE";
   scrollBottom();
@@ -403,10 +395,12 @@ function ensureReportCard(streaming) {
     card.querySelector("[data-refresh-evidence]").addEventListener("click", evidenceRefreshController.start);
     card.querySelector("[data-reanalyze]").addEventListener("click", reanalyzeCurrentReview);
   }
-  const isResearch = state.currentReview?.taskType === COMPANY_PRE_RESEARCH;
-  card.querySelector(".report-toolbar > div > span").textContent = isResearch ? "COMPANY RESEARCH REPORT" : "BP REVIEW REPORT";
-  card.querySelector(".report-toolbar strong").textContent = isResearch ? "公司预研结果" : "核查结果";
-  card.querySelector("[data-reanalyze]").textContent = isResearch ? "重新预研" : "重新核查";
+  const labels = taskTypeLabels(state.currentReview?.taskType);
+  card.querySelector(".message-meta").innerHTML = `<span class="avatar">VL</span>${labels.report}`;
+  card.querySelector(".report-toolbar > div > span").textContent = labels.eyebrow;
+  card.querySelector(".report-toolbar strong").textContent = labels.result;
+  card.querySelector("[data-reanalyze]").textContent = labels.rerun;
+  card.querySelector("[data-refresh-evidence]").classList.toggle("hidden", !supportsEvidenceRefresh(state.currentReview?.taskType));
   card.querySelector(".report-content").classList.toggle("stream-cursor", streaming);
   card.querySelector(".report-footer").classList.toggle("hidden", streaming);
   if (streaming) card.querySelector("#followupSuggestions")?.classList.add("hidden");
@@ -459,6 +453,8 @@ function resetWorkspace() {
   elements.companyInput.value = "";
   elements.companyInput.disabled = false;
   elements.promptInput.value = "";
+  elements.paperUrlInput.value = "";
+  elements.industryResearchTemplate.value = "industry_overview";
   elements.promptInput.placeholder = "补充核查要求，或在报告完成后继续追问…";
   clearFile();
   taskMode.selectAttachmentMode();
@@ -467,24 +463,6 @@ function resetWorkspace() {
   syncConversationPdfButton(elements.conversationPdfButton, "");
   loadHistory();
   elements.sidebar.classList.remove("open");
-}
-
-async function reanalyzeCurrentReview() {
-  const isResearch = state.currentReview?.taskType === COMPANY_PRE_RESEARCH;
-  const confirmMessage = isResearch ? "将重新抓取公开信息并生成公司预研报告。旧报告会先归档，是否继续？" : "将使用已保存的原始 BP 重新解析并核查。旧报告会先归档，是否继续？";
-  if (!state.currentId || !window.confirm(confirmMessage)) return;
-  try {
-    const payload = await requestJson(`/api/reviews/${state.currentId}/reanalyze`, { method: "POST" });
-    state.currentReview = payload.review;
-    state.stages = payload.review.stages || [];
-    state.report = "";
-    document.querySelector("[data-reanalyze]")?.setAttribute("disabled", "");
-    renderProgressPanel();
-    connectEvents(state.currentId);
-    toast(isResearch ? "已开始重新抓取公开信息，旧报告已归档" : "已开始增强解析，旧报告已归档");
-  } catch (error) {
-    toast(error.message);
-  }
 }
 
 function setBusy(busy) {

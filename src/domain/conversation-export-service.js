@@ -1,8 +1,8 @@
 import { normalizeReviewReport } from "./report-summary-service.js";
 
 export function buildConversationExport(review) {
-  const taskType = review?.taskType === "company_pre_research" ? "company_pre_research" : "attachment_review";
-  const companyName = String(review?.companyName || "未命名公司").trim();
+  const taskType = ["company_pre_research", "industry_research", "paper_analysis"].includes(review?.taskType) ? review.taskType : "attachment_review";
+  const companyName = String(review?.companyName || "未命名主题").trim();
   return {
     title: `${companyName} · 完整对话`,
     companyName,
@@ -23,7 +23,7 @@ export function buildConversationExport(review) {
       message: String(stage?.message || "")
     })),
     report: normalizeReviewReport(review),
-    reportLabel: taskType === "company_pre_research" ? "公司预研报告" : "BP 核查报告",
+    reportLabel: reportLabel(taskType),
     quality: review?.quality || null,
     evidenceRefresh: review?.lastEvidenceRefresh?.report ? {
       title: "公开资料刷新",
@@ -39,7 +39,11 @@ export function buildConversationExport(review) {
 }
 
 function defaultInstruction(taskType) {
-  return taskType === "company_pre_research" ? "基于公开信息完成公司预研" : "全面核查这份 BP";
+  return ({ company_pre_research: "基于公开信息完成公司预研", industry_research: "完成行业概览研究", paper_analysis: "解读论文的技术、可信度与商业化价值" })[taskType] || "全面核查这份 BP";
+}
+
+function reportLabel(taskType) {
+  return ({ company_pre_research: "公司预研报告", industry_research: "行业研究报告", paper_analysis: "论文解读报告" })[taskType] || "BP 核查报告";
 }
 
 function array(value) {

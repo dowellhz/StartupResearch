@@ -1,5 +1,5 @@
 export function submitUploadedBp({ requestJson, currentId, currentReview, companyName, instruction, file, data }) {
-  const shouldMatch = Boolean(currentId && currentReview?.reportAvailable && currentReview.taskType !== "company_pre_research");
+  const shouldMatch = Boolean(currentId && currentReview?.reportAvailable && (!currentReview.taskType || currentReview.taskType === "attachment_review"));
   const url = shouldMatch ? `/api/reviews/${currentId}/company-match` : "/api/reviews";
   return requestJson(url, {
     method: "POST",
@@ -18,6 +18,28 @@ export function submitCompanyPreResearch({ requestJson, companyName, instruction
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ taskType: "company_pre_research", companyName, instruction })
+  });
+}
+
+export function submitIndustryResearch({ requestJson, topic, instruction, researchTemplate }) {
+  return requestJson("/api/reviews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ taskType: "industry_research", companyName: topic, instruction, researchTemplate })
+  });
+}
+
+export function submitPaperAnalysis({ requestJson, title, instruction, sourceUrl, file, data }) {
+  return requestJson("/api/reviews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      taskType: "paper_analysis",
+      companyName: title,
+      instruction,
+      sourceUrl,
+      ...(file ? { file: { filename: file.name, mimeType: file.type, size: file.size, data } } : {})
+    })
   });
 }
 

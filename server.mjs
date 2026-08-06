@@ -8,7 +8,9 @@ import { createCompanyPreResearchPipeline } from "./src/domain/company-pre-resea
 import { createCompanyIdentityService } from "./src/domain/company-identity-service.js";
 import { buildConversationExport } from "./src/domain/conversation-export-service.js";
 import { createEvidenceRefreshService } from "./src/domain/evidence-refresh-service.js";
+import { createIndustryResearchPipeline } from "./src/domain/industry-research-pipeline.js";
 import { createInvestmentAnalysisService } from "./src/domain/investment-analysis-service.js";
+import { createPaperAnalysisPipeline } from "./src/domain/paper-analysis-pipeline.js";
 import { createReviewManagerService } from "./src/domain/review-manager-service.js";
 import { normalizeReviewReport } from "./src/domain/report-summary-service.js";
 import { createDeepSeekModelService } from "./src/infra/deepseek-model-service.js";
@@ -36,7 +38,10 @@ const evidenceRefresh = createEvidenceRefreshService({ model, repository });
 const pdf = createPdfReportService();
 const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService: pdf, investmentAnalysisService: investmentAnalysis, webResearchEnabled: config.webResearchEnabled });
 const companyResearchPipeline = createCompanyPreResearchPipeline({ model, repository, pdfReportService: pdf, webResearchEnabled: config.webResearchEnabled });
-const manager = createReviewManagerService({ pipeline, companyResearchPipeline, repository, model, evidenceRefreshService: evidenceRefresh });
+const industryResearchPipeline = createIndustryResearchPipeline({ model, repository, pdfReportService: pdf, webResearchEnabled: config.webResearchEnabled });
+const paperSourceFetcher = createLinkedPageResearchService({ documentExtractor: extractor, limits: { maxPdfBytes: config.maxUploadBytes, timeoutMs: 20000 } });
+const paperAnalysisPipeline = createPaperAnalysisPipeline({ extractor, model, repository, paperSourceFetcher, pdfReportService: pdf, webResearchEnabled: config.webResearchEnabled });
+const manager = createReviewManagerService({ pipeline, companyResearchPipeline, industryResearchPipeline, paperAnalysisPipeline, repository, model, evidenceRefreshService: evidenceRefresh });
 const browserSessions = createBrowserSessionService();
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
 
@@ -67,18 +72,18 @@ async function route(req, res) {
   }
   if (req.method === "POST" && url.pathname === "/api/reviews") {
     const body = await readJson(req, config.maxUploadBytes * 1.42 + 1024 * 1024);
-    const taskType = body.taskType === "company_pre_research" ? "company_pre_research" : "attachment_review";
+    const taskType = normalizeTaskType(body.taskType);
     if (taskType === "attachment_review") validateUploadBody(body);
-    else validateCompanyResearchBody(body);
-    const review = await manager.create(taskType === "company_pre_research" ? {
-      taskType,
-      companyName: body.companyName,
-      instruction: body.instruction
-    } : {
+    if (taskType === "company_pre_research") validateCompanyResearchBody(body);
+    if (taskType === "industry_research") validateIndustryResearchBody(body);
+    if (taskType === "paper_analysis") validatePaperAnalysisBody(body);
+    const review = await manager.create({
       taskType,
       companyName: body.companyName,
       instruction: body.instruction,
-      upload: normalizeUpload(body.file)
+      researchTemplate: body.researchTemplate,
+      sourceUrl: body.sourceUrl,
+      ...(body.file ? { upload: normalizeUpload(body.file) } : {})
     }, { ownerId: browserSession.id });
     return json(res, 202, { ok: true, review });
   }
@@ -169,7 +174,7 @@ async function downloadPdf(res, id, ownerId) {
   const pdfStoragePath = await repository.savePdf(id, buffer, { date: review.createdAt || review.completedAt });
   const job = await repository.get(id);
   if (job) await repository.save({ ...job, pdfStoragePath });
-  const filename = encodeURIComponent(`${safeFilename(review.companyName || "BP")}-${review.taskType === "company_pre_research" ? "公司预研报告" : "核查报告"}.pdf`);
+  const filename = encodeURIComponent(`${safeFilename(review.companyName || "研究")}-${reportTitle(review).replace(`${review.companyName || "未命名主题"} `, "")}.pdf`);
   res.writeHead(200, {
     "Content-Type": "application/pdf",
     "Content-Length": buffer.length,
@@ -236,6 +241,23 @@ function validateCompanyResearchBody(body) {
   if (!String(body.companyName || "").trim()) throw Object.assign(new Error("公司预研需要填写公司名称"), { statusCode: 400 });
 }
 
+function validateIndustryResearchBody(body) {
+  if (!String(body.companyName || "").trim()) throw Object.assign(new Error("行业研究需要填写行业或技术主题"), { statusCode: 400 });
+}
+
+function validatePaperAnalysisBody(body) {
+  if (!body.file?.data && !/^https?:\/\//i.test(String(body.sourceUrl || ""))) {
+    throw Object.assign(new Error("论文解读需要上传 PDF 或填写论文 URL"), { statusCode: 400 });
+  }
+  if (body.file && !/\.pdf$/i.test(String(body.file.filename || "")) && !/application\/pdf/i.test(String(body.file.mimeType || ""))) {
+    throw Object.assign(new Error("论文解读仅支持 PDF 文件"), { statusCode: 400 });
+  }
+}
+
+function normalizeTaskType(value) {
+  return ["company_pre_research", "industry_research", "paper_analysis"].includes(value) ? value : "attachment_review";
+}
+
 function normalizeUpload(file) {
   return {
     filename: sanitizeVisibleFilename(file.filename),
@@ -284,5 +306,6 @@ async function ensureStoredPdf(job) {
 }
 
 function reportTitle(review) {
-  return `${review.companyName || "未命名公司"} ${review.taskType === "company_pre_research" ? "公司预研报告" : "BP 核查报告"}`;
+  const suffix = ({ company_pre_research: "公司预研报告", industry_research: "行业研究报告", paper_analysis: "论文解读" })[review.taskType] || "BP 核查报告";
+  return `${review.companyName || "未命名主题"} ${suffix}`;
 }
