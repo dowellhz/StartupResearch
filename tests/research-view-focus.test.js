@@ -14,13 +14,15 @@ test("research restart moves keyboard and scroll focus to the progress card", ()
     setAttribute: (...values) => calls.push(["attribute", ...values]),
     focus: (options) => calls.push(["focus", options])
   };
+  let focused = false;
 
-  assert.equal(focusResearchStart({ conversation, progressPanel, schedule: (callback) => callback() }), true);
+  assert.equal(focusResearchStart({ conversation, progressPanel, schedule: (callback) => callback(), onFocused: () => { focused = true; } }), true);
   assert.deepEqual(calls, [
+    ["scroll", { top: 736, behavior: "auto" }],
     ["attribute", "tabindex", "-1"],
-    ["focus", { preventScroll: true }],
-    ["scroll", { top: 736, behavior: "smooth" }]
+    ["focus", { preventScroll: true }]
   ]);
+  assert.equal(focused, true);
 });
 
 test("research focus is a safe no-op before the progress card exists", () => {

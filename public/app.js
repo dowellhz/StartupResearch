@@ -88,6 +88,7 @@ const state = {
   reportRenderTimer: null,
   stages: [],
   autoFollow: true,
+  researchFocusLock: false,
   taskType: ATTACHMENT_REVIEW
 };
 const taskMode = createComposerTaskModeController({ elements, state, clearAttachment: clearFile });
@@ -124,6 +125,7 @@ function bindEvents() {
   elements.companyInput.addEventListener("input", draft.saveCompany);
   bindComposerInput({ textarea: elements.promptInput, form: elements.composer, submitButton: elements.sendButton, onInput: () => { autoResize(); draft.save(); } });
   elements.conversation.addEventListener("scroll", () => {
+    if (state.researchFocusLock) return;
     state.autoFollow = isNearConversationBottom();
   }, { passive: true });
   document.addEventListener("keydown", (event) => {
@@ -385,7 +387,19 @@ function renderProgressPanel() {
 
 function focusCurrentResearchStart() {
   state.autoFollow = false;
-  focusResearchStart({ conversation: elements.conversation, progressPanel: document.querySelector("#progressMessage") });
+  state.researchFocusLock = true;
+  const focused = focusResearchStart({
+    conversation: elements.conversation,
+    progressPanel: document.querySelector("#progressMessage"),
+    onFocused: () => {
+      state.autoFollow = false;
+      requestAnimationFrame(() => {
+        state.researchFocusLock = false;
+        state.autoFollow = false;
+      });
+    }
+  });
+  if (!focused) state.researchFocusLock = false;
 }
 
 function ensureReportCard(streaming) {
