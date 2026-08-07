@@ -33,6 +33,13 @@ export function getRuntimeConfig(env = process.env) {
     researchTools: {
       openAlexApiKey: String(env.OPENALEX_API_KEY || "").trim()
     },
+    documents: {
+      pdfTimeoutMs: positiveNumber(env.PDF_EXTRACTION_TIMEOUT_MS, 120000),
+      pdfConcurrency: positiveNumber(env.PDF_EXTRACTION_CONCURRENCY, 1)
+    },
+    recovery: {
+      staleAfterMs: positiveNumber(env.ACTIVE_TASK_STALE_MINUTES, 15) * 60 * 1000
+    },
     webResearchEnabled: String(env.WEB_RESEARCH_ENABLED ?? "true").toLowerCase() !== "false"
   };
 }

@@ -174,6 +174,25 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     return { id, uploadRetained: result.uploadRetained, pdfRetained: result.pdfRetained };
   }
 
+  async function failInterrupted(id, reason) {
+    const job = await requireJob(id);
+    if (!["queued", "running"].includes(job.status)) return publicJob(job);
+    controllers.get(id)?.abort(new Error(reason));
+    const nextStatus = job.status === "running" && job.reportAvailable ? "needs_attention" : "failed";
+    const failed = transitionReview(job, nextStatus);
+    const activeStage = array(job.stages).find((stage) => stage.status === "running");
+    const saved = await repository.save({
+      ...failed,
+      error: String(reason || "任务在服务中断后未能恢复"),
+      failedStep: activeStage?.key || job.failedStep || "startup-recovery",
+      stages: array(job.stages).map((stage) => stage.status === "running"
+        ? { ...stage, status: "failed", message: String(reason || "任务恢复超时") }
+        : stage)
+    });
+    publish(id, { type: "error", data: { message: saved.error, failedStep: saved.failedStep, status: saved.status }, at: now() });
+    return publicJob(saved);
+  }
+
   async function run(id) {
     if (deletedIds.has(id)) return;
     if (controllers.has(id)) return;
@@ -365,7 +384,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     return job;
   }
 
-  return { ask, create, deleteConversation, get, list, reanalyze, refreshEvidence, replaceBp, retry, run, runEvidenceRefresh, subscribe };
+  return { ask, create, deleteConversation, failInterrupted, get, list, reanalyze, refreshEvidence, replaceBp, retry, run, runEvidenceRefresh, subscribe };
 }
 
 function followupProgress(key, label, status, message) {

@@ -102,6 +102,25 @@ test("replacing a BP stores one internal comparison snapshot without exposing ra
   assert.equal("analysis" in result, false);
 });
 
+test("startup recovery failure uses the review state machine and keeps retry metadata", async () => {
+  const ownerId = `anon_${"s".repeat(43)}`;
+  let job = {
+    id: "bp_stale_recovery", ownerId, status: "running", reportAvailable: false,
+    stages: [{ key: "document-parse", status: "running", message: "解析中" }]
+  };
+  const repository = {
+    get: async () => job,
+    save: async (value) => { job = value; return value; }
+  };
+  const pipeline = { steps: [], execute: async () => ({ ok: true }) };
+  const manager = createReviewManagerService({ pipeline, repository, model: {} });
+  const result = await manager.failInterrupted("bp_stale_recovery", "解析器长时间无响应");
+  assert.equal(result.status, "failed");
+  assert.equal(job.failedStep, "document-parse");
+  assert.equal(job.stages[0].status, "failed");
+  assert.match(job.error, /无响应/);
+});
+
 test("retry clears stale failure metadata before resuming from checkpoints", async () => {
   const ownerId = `anon_${"r".repeat(43)}`;
   let job = { id: "bp_retry", ownerId, status: "needs_attention", error: "font error", failedStep: "persist-report", checkpoints: {}, stages: [] };

@@ -12,14 +12,16 @@ import { createIndustryResearchPipeline } from "./src/domain/industry-research-p
 import { createInvestmentAnalysisService } from "./src/domain/investment-analysis-service.js";
 import { createPaperAnalysisPipeline } from "./src/domain/paper-analysis-pipeline.js";
 import { createReviewManagerService } from "./src/domain/review-manager-service.js";
+import { recoverActiveReviews } from "./src/domain/startup-recovery-service.js";
 import { normalizeReviewReport } from "./src/domain/report-summary-service.js";
 import { createDeepSeekModelService } from "./src/infra/deepseek-model-service.js";
 import { createBrowserSessionService } from "./src/infra/browser-session-service.js";
+import { createBoundedTaskQueue } from "./src/infra/bounded-task-queue.js";
 import { createDocumentExtractionService } from "./src/infra/document-extraction-service.js";
 import { createEvidenceVerificationService } from "./src/infra/evidence-verification-service.js";
 import { createLinkedPageResearchService } from "./src/infra/linked-page-research-service.js";
 import { createPdfReportService } from "./src/infra/pdf-report-service.js";
-import { createPdfOcrService } from "./src/infra/pdf-ocr-service.js";
+import { createPdfWorkerExtractionService } from "./src/infra/pdf-worker-extraction-service.js";
 import { createStructuredResearchToolService } from "./src/infra/research-tools/structured-research-tool-service.js";
 import { sanitizeVisibleFilename } from "./public/privacy-redaction.js";
 import { createFileReviewRepository } from "./src/storage/file-review-repository.js";
@@ -29,8 +31,9 @@ const config = getRuntimeConfig();
 const repository = createFileReviewRepository({ dataDir: config.dataDir });
 await repository.initialize();
 const researchTools = createStructuredResearchToolService({ credentials: config.researchTools });
-const pdfOcrService = createPdfOcrService();
-const extractor = createDocumentExtractionService({ maxBytes: config.maxUploadBytes, pdfOcrService });
+const pdfExtractionQueue = createBoundedTaskQueue({ concurrency: config.documents.pdfConcurrency });
+const pdfExtractor = createPdfWorkerExtractionService({ timeoutMs: config.documents.pdfTimeoutMs, queue: pdfExtractionQueue });
+const extractor = createDocumentExtractionService({ maxBytes: config.maxUploadBytes, pdfExtractor });
 const linkedPageResearch = createLinkedPageResearchService({ documentExtractor: extractor });
 const model = createDeepSeekModelService({ config: config.model, researchTools, linkedPageResearch });
 const companyIdentity = createCompanyIdentityService({ extractor, model });
@@ -298,11 +301,12 @@ function safeFilename(value) {
 server.listen(config.port, config.host, async () => {
   process.stdout.write(`VentureLens running at http://${config.host}:${config.port}\n`);
   process.stdout.write(`DeepSeek ${config.model.apiKey ? "configured" : "not configured"} · model ${config.model.model}\n`);
-  for (const job of await repository.list({ limit: 100 })) {
+  const jobs = await repository.list({ limit: 100 });
+  for (const job of jobs) {
     if (job.reportAvailable) await ensureStoredPdf(job).catch((error) => process.stderr.write(`PDF backfill ${job.id}: ${error.message}\n`));
-    if (["queued", "running"].includes(job.status)) manager.run(job.id).catch(() => {});
-    if (["queued", "running"].includes(job.evidenceRefresh?.status)) manager.runEvidenceRefresh(job.id).catch(() => {});
   }
+  const recovery = await recoverActiveReviews({ jobs, manager, staleAfterMs: config.recovery.staleAfterMs });
+  process.stdout.write(`Recovery resumed ${recovery.resumed.length}, stopped stale ${recovery.failed.length}\n`);
 });
 
 async function ensureStoredPdf(job) {
