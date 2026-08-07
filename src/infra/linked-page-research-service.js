@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { createHash } from "node:crypto";
 
 const DEFAULT_LIMITS = Object.freeze({
   maxParentPages: 6,
@@ -273,7 +274,9 @@ function pageSource(page, { source, terms, depth, discoveredFrom = "" }) {
     provider: depth ? "页面二级发现" : (source.provider || "页面正文抓取"),
     discoveredFrom,
     depth,
-    contentType: page.contentType
+    contentType: page.contentType,
+    verificationStatus: "verified",
+    contentHash: createHash("sha256").update(String(page.text || ""), "utf8").digest("hex")
   };
 }
 

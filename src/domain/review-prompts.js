@@ -48,6 +48,7 @@ export function buildExtractionMessages({ companyName, instruction, outputLangua
         "用户的 instruction 是核查要求，不是公司名称；除非同一名称明确出现在 BP 内，否则不得把 instruction 写入 companyName。",
         "claims 至少覆盖团队、产品、客户、收入、融资、市场、竞争和技术中材料实际涉及的维度。",
         "claims 每项包含唯一 id、domain、statement、bpEvidence、importance、verificationNeed。",
+        "claims.bpEvidence 必须是 {pageNumber,exactQuote,location}；pageNumber 是 1 开始的整数，exactQuote 必须逐字复制 BP 原文且包含足够上下文，无法定位时使用 null 和空字符串，不得编造。",
         "importance 只能是 critical/high/medium/low。",
         "businessAudit 包含 metrics、checks、assumptions，只能使用 BP 明确披露的数字和可以复算的关系，不得补造缺失数据。",
         "metrics 每项包含 id、category、name、value、unit、period、bpEvidence、sourceClaimIds；同一指标在不同页面或期间出现时分别记录。",
@@ -74,7 +75,7 @@ export function buildExtractionMessages({ companyName, instruction, outputLangua
   ];
 }
 
-export function buildReportMessages({ companyName, instruction, outputLanguage, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, sources, crossCheck }) {
+export function buildReportMessages({ companyName, instruction, outputLanguage, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, sources, crossCheck, evidenceManifest }) {
   const sections = reportSections(outputLanguage);
   const english = isEnglishOutput(outputLanguage);
   return [
@@ -95,6 +96,7 @@ export function buildReportMessages({ companyName, instruction, outputLanguage, 
         "“数字与经营假设审计”必须优先使用 businessAudit，展示公式、输入、复算结果、状态和页码依据；不得把无法复算写成数字错误。",
         "市场规模必须在资料允许时给出自下而上的公式和参数；公开来源不足时列出待验证假设，不得照抄 BP 的 TAM/SAM/SOM 作为独立结论。",
         "关键声明核查表必须优先使用 claimLedger 的逐项状态和关联来源，不得仅按来源数量判断声明已获支持。",
+        "BP 页码和逐字原文只能使用 evidenceManifest 中 verificationStatus 为 verified 或 page_corrected 的 documentCitation；failed、unverified 不得表述成已核验。网页 captured 只表示已保存搜索摘要，不代表已核验网页正文。",
         "市场规模、竞品矩阵、投资判断、否决条件和里程碑必须优先使用 investmentAnalysis；结构化结果为空时明确资料缺口，不得自行补造。",
         english ? "List changes under ‘Changes in the New BP’ only when versionComparison.available=true; otherwise state that this is the first review or no comparable prior version is available." : "“新版 BP 变化”仅在 versionComparison.available=true 时列出变化；否则写明首次核查或无可比历史版本。",
         "引用公开网页时使用 [来源标题](URL)，URL 只能来自输入 sources。",
@@ -106,12 +108,12 @@ export function buildReportMessages({ companyName, instruction, outputLanguage, 
     },
     {
       role: "user",
-      content: buildReportInput({ companyName, instruction, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, crossCheck, sources })
+      content: buildReportInput({ companyName, instruction, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, crossCheck, sources, evidenceManifest })
     }
   ];
 }
 
-function buildReportInput({ companyName, instruction, document, analysis = {}, businessAudit = {}, claimLedger = {}, researchPlan = {}, investmentAnalysis = {}, crossCheck, sources = [] }) {
+function buildReportInput({ companyName, instruction, document, analysis = {}, businessAudit = {}, claimLedger = {}, researchPlan = {}, investmentAnalysis = {}, crossCheck, sources = [], evidenceManifest = {} }) {
   const payload = {
     companyName: String(companyName || "").slice(0, 500),
     instruction: String(instruction || "").slice(0, 4000),
@@ -146,6 +148,11 @@ function buildReportInput({ companyName, instruction, document, analysis = {}, b
     },
     investmentAnalysis: compactInvestmentAnalysis(investmentAnalysis),
     evidenceAssessment: crossCheck,
+    evidenceManifest: {
+      summary: evidenceManifest.summary,
+      quality: evidenceManifest.quality,
+      claims: array(evidenceManifest.claims).slice(0, 30).map(compactEvidenceClaim)
+    },
     publicSources: array(sources).slice(0, 36).map(compactSource)
   };
   let result = JSON.stringify(payload);
@@ -156,6 +163,7 @@ function buildReportInput({ companyName, instruction, document, analysis = {}, b
     payload.businessAudit.checks = payload.businessAudit.checks.slice(0, 16);
     payload.businessAudit.assumptions = payload.businessAudit.assumptions.slice(0, 16);
     payload.claimLedger.claims = payload.claimLedger.claims.slice(0, 20);
+    payload.evidenceManifest.claims = shrinkEvidenceClaims(payload.evidenceManifest.claims, 16, 3, 500);
     payload.publicSources = payload.publicSources.slice(0, 16);
     result = JSON.stringify(payload);
   }
@@ -166,6 +174,7 @@ function buildReportInput({ companyName, instruction, document, analysis = {}, b
     payload.businessAudit.checks = payload.businessAudit.checks.slice(0, 8);
     payload.businessAudit.assumptions = payload.businessAudit.assumptions.slice(0, 8);
     payload.claimLedger.claims = payload.claimLedger.claims.slice(0, 10);
+    payload.evidenceManifest.claims = shrinkEvidenceClaims(payload.evidenceManifest.claims, 8, 1, 240);
     payload.publicSources = payload.publicSources.slice(0, 8);
     result = JSON.stringify(payload);
   }
@@ -221,7 +230,7 @@ function compactClaim(claim) {
     id: compactValue(claim?.id, 100),
     domain: compactValue(claim?.domain, 100),
     statement: compactValue(claim?.statement, 500),
-    bpEvidence: compactValue(claim?.bpEvidence, 500),
+    bpEvidence: compactCitationInput(claim?.bpEvidence),
     importance: claim?.importance,
     verificationNeed: compactValue(claim?.verificationNeed, 350)
   };
@@ -235,6 +244,8 @@ function compactLedgerClaim(claim) {
     supportingSourceIds: array(claim?.supportingSources).map((source) => source.id),
     conflictingSourceIds: array(claim?.conflictingSources).map((source) => source.id),
     candidateSourceIds: array(claim?.candidateSources).map((source) => source.id),
+    documentCitation: claim?.citationEvidence?.documentCitation,
+    webCitations: array(claim?.citationEvidence?.webCitations).slice(0, 12),
     nextAction: compactValue(claim?.nextAction, 350)
   };
 }
@@ -296,8 +307,57 @@ function compactSource(source) {
     provider: compactValue(source?.provider, 100),
     retrievedAt: source?.retrievedAt,
     discoveredFrom: compactValue(source?.discoveredFrom, 2000),
-    depth: source?.depth
+    depth: source?.depth,
+    verificationStatus: source?.verificationStatus,
+    contentHash: source?.contentHash
   };
+}
+
+function compactCitationInput(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return compactValue(value, 500);
+  return {
+    pageNumber: value.pageNumber ?? value.page ?? value.page_number ?? null,
+    exactQuote: compactValue(value.exactQuote ?? value.quote ?? value.originalText ?? value.excerpt, 1200),
+    location: compactValue(value.location, 300)
+  };
+}
+
+function compactEvidenceClaim(value) {
+  const documentCitation = value?.documentCitation || {};
+  return {
+    claimId: compactValue(value?.claimId, 100),
+    importance: value?.importance,
+    documentCitation: {
+      sourcePath: compactValue(documentCitation.sourcePath, 500),
+      pageNumber: documentCitation.pageNumber,
+      exactQuote: compactValue(documentCitation.exactQuote, 1200),
+      verificationStatus: documentCitation.verificationStatus,
+      matchMethod: documentCitation.matchMethod,
+      evidenceHash: documentCitation.evidenceHash
+    },
+    webCitations: array(value?.webCitations).slice(0, 8).map((citation) => ({
+      sourceId: compactValue(citation?.sourceId, 100),
+      sourcePath: compactValue(citation?.sourcePath, 2000),
+      exactQuote: compactValue(citation?.exactQuote, 800),
+      verificationStatus: citation?.verificationStatus,
+      retrievedAt: citation?.retrievedAt,
+      evidenceHash: citation?.evidenceHash
+    }))
+  };
+}
+
+function shrinkEvidenceClaims(values, claimLimit, webLimit, quoteLimit) {
+  return array(values).slice(0, claimLimit).map((item) => ({
+    ...item,
+    documentCitation: {
+      ...item.documentCitation,
+      exactQuote: compactValue(item.documentCitation?.exactQuote, quoteLimit)
+    },
+    webCitations: array(item.webCitations).slice(0, webLimit).map((citation) => ({
+      ...citation,
+      exactQuote: compactValue(citation?.exactQuote, quoteLimit)
+    }))
+  }));
 }
 
 function compactObject(value, maxLength) {

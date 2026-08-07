@@ -22,11 +22,24 @@ test("evidence sources retain linked-page provenance", () => {
     discoveredFrom: "https://example.com/",
     depth: 1,
     contentType: "text/html",
+    verificationStatus: "verified",
+    contentHash: "a".repeat(64),
     provider: "页面二级发现"
   }]);
   assert.equal(sources[0].depth, 1);
   assert.equal(sources[0].discoveredFrom, "https://example.com/");
   assert.equal(sources[0].contentType, "text/html");
+  assert.equal(sources[0].verificationStatus, "verified");
+  assert.equal(sources[0].contentHash, "a".repeat(64));
+});
+
+test("a richer search excerpt does not inherit verification from another snippet", () => {
+  const sources = normalizeEvidenceSources([
+    { url: "https://example.com/a", snippet: "已抓取正文", verificationStatus: "verified", contentHash: "a".repeat(64) },
+    { url: "https://example.com/a", snippet: "搜索摘要提供了更长但未经正文抓取验证的证据片段", verificationStatus: "captured" }
+  ]);
+  assert.equal(sources[0].verificationStatus, "captured");
+  assert.equal(sources[0].contentHash, "");
 });
 
 test("evidence assessment reports claim coverage instead of counting URLs", () => {

@@ -67,3 +67,14 @@ test("fallback reports retain market, competitor, decision and version artifacts
   assert.match(report, /客户无法复核/);
   assert.match(report, /收入目标/);
 });
+
+test("fallback reports render structured BP citations instead of object placeholders", () => {
+  const report = buildFallbackReport({
+    companyName: "证据科技",
+    analysis: {
+      claims: [{ domain: "客户", statement: "已完成客户交付", bpEvidence: { pageNumber: 6, exactQuote: "已完成三家客户交付" } }]
+    }
+  });
+  assert.match(report, /第 6 页：“已完成三家客户交付”/);
+  assert.doesNotMatch(report, /\[object Object\]/);
+});

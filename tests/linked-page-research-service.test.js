@@ -36,6 +36,8 @@ test("linked-page research follows only relevant links at depth one and extracts
   assert.equal(result.stats.childFetched, 2);
   assert.ok(result.sources.some((source) => source.url === "https://example.com/team" && source.depth === 1));
   assert.ok(result.sources.some((source) => source.url.endsWith("edge-ai.pdf") && /模型压缩率/.test(source.snippet)));
+  assert.ok(result.sources.every((source) => source.verificationStatus === "verified"));
+  assert.ok(result.sources.every((source) => /^[a-f0-9]{64}$/.test(source.contentHash)));
   assert.equal(requested.includes("https://example.com/privacy"), false);
   assert.equal(requested.includes("https://unrelated.test/shop"), false);
   assert.ok(result.sources.filter((source) => source.depth === 1).every((source) => source.discoveredFrom === "https://example.com/"));

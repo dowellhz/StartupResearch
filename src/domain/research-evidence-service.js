@@ -38,7 +38,9 @@ export function normalizeEvidenceSources(sources = []) {
       provider: cleanText(raw.provider, 100),
       discoveredFrom: normalizeUrl(raw.discoveredFrom),
       depth: normalizeDepth(raw.depth),
-      contentType: cleanText(raw.contentType, 120)
+      contentType: cleanText(raw.contentType, 120),
+      verificationStatus: raw.verificationStatus === "verified" ? "verified" : "captured",
+      contentHash: normalizeHash(raw.contentHash)
     };
     const existing = byUrl.get(url);
     byUrl.set(url, existing ? mergeSource(existing, next) : next);
@@ -127,10 +129,11 @@ function evidenceTokens(value) {
 }
 
 function mergeSource(left, right) {
+  const snippetSource = meaningfulTextLength(right.snippet) > meaningfulTextLength(left.snippet) ? right : left;
   return {
     ...left,
     title: betterText(left.title, right.title),
-    snippet: betterText(left.snippet, right.snippet),
+    snippet: snippetSource.snippet,
     supports: Array.from(new Set([...left.supports, ...right.supports])),
     conflicts: Array.from(new Set([...left.conflicts, ...right.conflicts])),
     publishedAt: left.publishedAt || right.publishedAt,
@@ -139,7 +142,9 @@ function mergeSource(left, right) {
     provider: left.provider || right.provider,
     discoveredFrom: left.discoveredFrom || right.discoveredFrom,
     depth: Math.max(left.depth || 0, right.depth || 0),
-    contentType: left.contentType || right.contentType
+    contentType: left.contentType || right.contentType,
+    verificationStatus: snippetSource.verificationStatus,
+    contentHash: snippetSource.verificationStatus === "verified" ? snippetSource.contentHash : ""
   };
 }
 
@@ -165,6 +170,11 @@ function normalizeSourceTier(value) {
 function normalizeDepth(value) {
   const depth = Number(value);
   return Number.isInteger(depth) && depth >= 0 && depth <= 2 ? depth : 0;
+}
+
+function normalizeHash(value) {
+  const hash = String(value || "").trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(hash) ? hash : "";
 }
 
 function strongerTier(left, right) {

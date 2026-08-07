@@ -13,7 +13,7 @@ export function buildClaimLedger({ claims = [], sources = [], coverage = [] } = 
       id,
       domain: clean(claim?.domain, 100),
       statement: clean(claim?.statement, 1200),
-      bpEvidence: clean(claim?.bpEvidence, 1200),
+      bpEvidence: normalizeBpEvidence(claim?.bpEvidence),
       importance: normalizeImportance(claim?.importance),
       verificationNeed: clean(claim?.verificationNeed, 800),
       status,
@@ -65,7 +65,7 @@ function claimStatus({ claim, supportingSources, conflictingSources, candidateSo
   if (conflictingSources.length) return "conflicted";
   if (supportingSources.length) return "supported";
   if (candidateSources.length) return "candidate";
-  return clean(claim?.bpEvidence, 1200) ? "bp_only" : "insufficient";
+  return hasBpEvidence(claim?.bpEvidence) ? "bp_only" : "insufficient";
 }
 
 function evidenceConfidence(sources) {
@@ -97,4 +97,25 @@ function countBy(values, selector) {
 
 function clean(value, maxLength) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function normalizeBpEvidence(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return clean(value, 1200);
+  return {
+    pageNumber: positiveInteger(value.pageNumber ?? value.page ?? value.page_number),
+    exactQuote: clean(value.exactQuote ?? value.quote ?? value.originalText ?? value.excerpt, 1200),
+    location: clean(value.location, 300)
+  };
+}
+
+function hasBpEvidence(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return Boolean(value.pageNumber ?? value.page ?? value.page_number ?? value.exactQuote ?? value.quote ?? value.location);
+  }
+  return Boolean(clean(value, 1200));
+}
+
+function positiveInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
 }

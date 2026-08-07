@@ -92,12 +92,12 @@ function profileText(profile = {}) {
 
 function claimsByDomain(claims, pattern) {
   const matched = claims.filter((claim) => pattern.test(String(claim.domain || "")));
-  return matched.length ? matched.map((claim) => `- ${claim.statement}（BP 依据：${claim.bpEvidence || "未标注"}）`).join("\n") : "BP 未提供或结构化提取未识别到该维度的明确声明。";
+  return matched.length ? matched.map((claim) => `- ${claim.statement}（BP 依据：${evidenceLabel(claim.bpEvidence)}）`).join("\n") : "BP 未提供或结构化提取未识别到该维度的明确声明。";
 }
 
 function claimsTable(claims, ledger) {
   const cards = Array.isArray(ledger?.claims) && ledger.claims.length ? ledger.claims : claims;
-  const rows = cards.slice(0, 30).map((claim) => `| ${tableCell(claim.statement)} | ${tableCell(claim.bpEvidence || "未标注")} | ${tableCell(sourceSummary(claim))} | ${claimJudgment(claim.status)} | ${claim.confidence || "低"} | ${tableCell(claim.nextAction || claim.verificationNeed || "补充原始底稿与第三方证据")} |`);
+  const rows = cards.slice(0, 30).map((claim) => `| ${tableCell(claim.statement)} | ${tableCell(evidenceLabel(claim.bpEvidence))} | ${tableCell(sourceSummary(claim))} | ${claimJudgment(claim.status)} | ${claim.confidence || "低"} | ${tableCell(claim.nextAction || claim.verificationNeed || "补充原始底稿与第三方证据")} |`);
   return ["| 声明 | BP依据 | 公开核验 | 判断 | 置信度 | 下一步 |", "|---|---|---|---|---|---|", ...(rows.length ? rows : ["| 未提取到明确声明 | 未提供 | 资料不足 | 资料不足 | 低 | 重新解析材料 |"])].join("\n");
 }
 
@@ -137,4 +137,11 @@ function sourcesText(sources) {
 
 function tableCell(value) {
   return String(value || "").replace(/\|/g, "\\|").replace(/\s+/g, " ").slice(0, 500);
+}
+
+function evidenceLabel(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return String(value || "未标注");
+  const page = Number(value.pageNumber || value.page || value.page_number) > 0 ? `第 ${Number(value.pageNumber || value.page || value.page_number)} 页` : "页码未核验";
+  const quote = String(value.exactQuote || value.quote || "").replace(/\s+/g, " ").trim();
+  return quote ? `${page}：“${quote}”` : page;
 }

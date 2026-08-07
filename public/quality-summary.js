@@ -8,6 +8,8 @@ export function renderQualitySummary(container, quality) {
   const values = [
     metrics.sourceCount === undefined ? "" : `${english ? "Evidence" : "证据片段"} ${metrics.evidenceRichCount || 0}/${metrics.sourceCount}`,
     metrics.importantClaimCount === undefined ? "" : `${english ? "Claim coverage" : "声明覆盖"} ${metrics.coveredClaimCount || 0}/${metrics.importantClaimCount}`,
+    metrics.verifiedCitationCount === undefined ? "" : `${english ? "Verified citations" : "已核验引用"} ${metrics.verifiedCitationCount}`,
+    metrics.traceableDocumentClaimCount === undefined ? "" : `${english ? "Traceable BP claims" : "可追溯 BP 声明"} ${metrics.traceableDocumentClaimCount}`,
     metrics.claimLedgerCount ? `${english ? "Supported claims" : "声明卡"} ${metrics.supportedLedgerClaimCount || 0}/${metrics.claimLedgerCount}${english ? "" : " 获支持"}` : "",
     metrics.auditedMetricCount ? `${english ? "Numeric checks" : "数字审计"} ${metrics.numericCheckCount || 0}` : "",
     metrics.marketScenarioCount ? `${english ? "Market scenarios" : "市场测算"} ${metrics.marketScenarioCount}` : "",

@@ -46,3 +46,18 @@ test("quality gate scores evidence coverage and flags overconfident absence clai
   assert.equal(quality.metrics.claimLedgerCount, 1);
   assert.equal(quality.components.evidence, 31);
 });
+
+test("quality gate requires verified BP quotes for high priority claims", () => {
+  const body = REPORT_SECTIONS.map((section) => `## ${section}\n\n${section === "关键声明核查表" ? "| 声明 | BP依据 | 公开核验 | 判断 | 置信度 | 下一步 |\n|---|---|---|---|---|---|\n| 收入 | 第8页 | 待核验 | 仅BP自述 | 低 | 查原文 |" : "资料不足与分析推断已明确区分。"}`).join("\n\n");
+  const report = `# 报告\n\n${body}\n\n${"补充分析。".repeat(400)}`;
+  const quality = assessReportQuality(report, {
+    sources: [{ title: "Official", url: "https://example.com", snippet: "公开信息", supports: ["claim_1"] }],
+    crossCheck: { coverage: [{ claimId: "claim_1", status: "supported", hasCandidateEvidence: true }] },
+    evidenceManifest: {
+      summary: { verifiedCitations: 0, traceableDocumentClaims: 0, openHighPriorityDocumentCitations: 1, failedCitations: 0 }
+    }
+  });
+  assert.equal(quality.ok, false);
+  assert.equal(quality.findings.some((item) => item.code === "high_priority_citation_unverified" && item.severity === "fatal"), true);
+  assert.equal(quality.metrics.openHighPriorityDocumentCitationCount, 1);
+});

@@ -1,8 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createBpReviewPipeline, createReviewJob } from "../src/domain/bp-review-pipeline.js";
+import { BP_PIPELINE_VERSION, prepareJobForPipeline } from "../src/domain/bp-review-pipeline-support.js";
 import { REPORT_SECTIONS } from "../src/domain/review-prompts.js";
+import { createEvidenceVerificationService } from "../src/infra/evidence-verification-service.js";
 import { Result } from "../src/domain/result.js";
+
+const evidenceVerificationService = createEvidenceVerificationService();
+
+test("legacy checkpoints invalidate downstream work when evidence verification is introduced", () => {
+  const steps = ["cross-check", "evidence-verification", "investment-analysis", "quality-gate"]
+    .map((key) => ({ key, label: key }));
+  const migrated = prepareJobForPipeline({
+    checkpoints: {
+      "cross-check": { completed: true },
+      "investment-analysis": { completed: true },
+      "quality-gate": { completed: true }
+    },
+    stages: steps.filter((step) => step.key !== "evidence-verification").map((step) => ({ ...step, status: "completed" }))
+  }, steps);
+  assert.equal(migrated.pipelineVersion, BP_PIPELINE_VERSION);
+  assert.equal(migrated.checkpoints["cross-check"].completed, true);
+  assert.equal(migrated.checkpoints["investment-analysis"], undefined);
+  assert.equal(migrated.stages.find((step) => step.key === "evidence-verification").status, "pending");
+});
 
 test("BP review pipeline checkpoints every stage and keeps a visible report", async () => {
   const saved = [];
@@ -16,7 +37,7 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
   const model = {
     complete: async () => JSON.stringify({
       companyProfile: { companyName: "示例科技", companyNameConfidence: "high", companyNameEvidence: ["封面"] },
-      claims: [{ id: "c1", domain: "客户", statement: "已有十家客户", bpEvidence: "第 5 页", importance: "high" }],
+      claims: [{ id: "c1", domain: "客户", statement: "已有十家客户", bpEvidence: { pageNumber: 5, exactQuote: "公司目前已有十家客户并持续提供服务。" }, importance: "high" }],
       businessAudit: {
         metrics: [{ id: "m1", category: "customer", name: "客户数", value: 10, unit: "家", period: "当前", bpEvidence: "第5页", sourceClaimIds: ["c1"] }],
         checks: [{ id: "a1", type: "arithmetic", status: "not_calculable", severity: "medium", description: "缺少客单价，无法复算收入", formula: "收入=客户数×客单价", inputs: [], result: "", bpEvidence: "第5页", relatedMetricIds: ["m1"], nextStep: "索取客户收入明细" }],
@@ -34,7 +55,13 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
       return value;
     }
   };
-  const extractor = { extract: async () => Result.ok({ text: "商业计划内容".repeat(40), pageCount: 8, originalChars: 240, truncated: false, engine: "mock" }) };
+  const pages = Array.from({ length: 8 }, (_, index) => ({
+    page: index + 1,
+    text: index === 4
+      ? `公司目前已有十家客户并持续提供服务。${"客户经营与产品交付说明。".repeat(5)}`
+      : `商业计划内容 ${index + 1}。${"产品、市场、团队及经营情况说明。".repeat(5)}`
+  }));
+  const extractor = { extract: async () => Result.ok({ text: pages.map((page) => `--- 第 ${page.page} 页 ---\n${page.text}`).join("\n\n"), pages, pageCount: 8, originalChars: 240, truncated: false, engine: "mock" }) };
   const pdfReportService = { render: async () => Buffer.from("generated-pdf") };
   const investmentAnalysisService = { analyze: async () => ({
     warning: "",
@@ -45,7 +72,7 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
       versionComparison: { available: false, changes: [] }
     }
   }) };
-  const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService });
+  const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService });
   const job = createReviewJob({
     companyName: "示例科技",
     instruction: "全面核查",
@@ -59,6 +86,8 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
   assert.equal(result.value.job.companyName, "示例科技");
   assert.equal(result.value.job.businessAudit.summary.metricCount, 1);
   assert.equal(result.value.job.claimLedger.summary.supported, 1);
+  assert.equal(result.value.job.evidenceManifest.summary.traceableDocumentClaims, 1);
+  assert.equal(result.value.job.evidenceManifest.claims[0].documentCitation.verificationStatus, "verified");
   assert.equal(result.value.job.researchPlan.claimPlans[0].claimId, "c1");
   assert.equal(result.value.job.investmentAnalysis.decision.stance, "conditional");
   assert.equal(result.value.job.quality.metrics.competitorCount, 1);
@@ -94,7 +123,7 @@ test("BP review identifies the company name when the user leaves it blank", asyn
     }
   };
   const extractor = { extract: async () => Result.ok({ text: "材料识别科技有限公司商业计划书", pageCount: 1, originalChars: 16 }) };
-  const pipeline = createBpReviewPipeline({ extractor, model, repository });
+  const pipeline = createBpReviewPipeline({ extractor, model, repository, evidenceVerificationService });
   const job = createReviewJob({ companyName: "", instruction: "", upload: { filename: "bp.pdf", data: "eA==" }, steps: pipeline.steps });
   const result = await pipeline.execute(job);
   assert.equal(result.ok, true, result.error);
@@ -120,7 +149,7 @@ test("BP review never adopts the user's instruction as the detected company name
     }
   };
   const extractor = { extract: async () => Result.ok({ text: "Alphabet Company Report", pageCount: 1, originalChars: 23 }) };
-  const pipeline = createBpReviewPipeline({ extractor, model, repository, webResearchEnabled: false });
+  const pipeline = createBpReviewPipeline({ extractor, model, repository, evidenceVerificationService, webResearchEnabled: false });
   const job = createReviewJob({ companyName: "", instruction: "给我深入核查", upload: { filename: "report.pdf", data: "eA==" }, steps: pipeline.steps });
   const result = await pipeline.execute(job);
   assert.equal(result.ok, true, result.error);
@@ -151,7 +180,7 @@ test("BP review replaces a stale provided company when the BP identifies a diffe
     }
   };
   const extractor = { extract: async () => Result.ok({ text: "三向纪元 | TriVera 商业计划书", pageCount: 1, originalChars: 24 }) };
-  const pipeline = createBpReviewPipeline({ extractor, model, repository, webResearchEnabled: false });
+  const pipeline = createBpReviewPipeline({ extractor, model, repository, evidenceVerificationService, webResearchEnabled: false });
   const job = createReviewJob({ companyName: "珠海纳甘新能源技术有限公司", instruction: "全面核查", upload: { filename: "bp.pdf", data: "eA==" }, steps: pipeline.steps });
   const result = await pipeline.execute(job);
   assert.equal(result.ok, true, result.error);
@@ -178,7 +207,7 @@ test("short model output produces a recoverable report instead of interrupting",
     stream: async () => ""
   };
   const extractor = { extract: async () => Result.ok({ text: "韧性科技 BP", pageCount: 1, originalChars: 8 }) };
-  const pipeline = createBpReviewPipeline({ extractor, model, repository });
+  const pipeline = createBpReviewPipeline({ extractor, model, repository, evidenceVerificationService });
   const job = createReviewJob({ companyName: "", instruction: "", upload: { filename: "bp.pdf", data: "eA==" }, steps: pipeline.steps });
   const result = await pipeline.execute(job);
   assert.equal(result.ok, true, result.error);
@@ -204,7 +233,7 @@ test("invalid structured JSON falls back and continues to a visible report", asy
     }
   };
   const extractor = { extract: async () => Result.ok({ text: "降级科技商业计划书", pageCount: 2, originalChars: 10 }) };
-  const pipeline = createBpReviewPipeline({ extractor, model, repository, webResearchEnabled: false });
+  const pipeline = createBpReviewPipeline({ extractor, model, repository, evidenceVerificationService, webResearchEnabled: false });
   const job = createReviewJob({ companyName: "降级科技", instruction: "全面核查", upload: { filename: "bp.pdf", data: "eA==" }, steps: pipeline.steps });
   const result = await pipeline.execute(job);
   assert.equal(result.ok, true, result.error);

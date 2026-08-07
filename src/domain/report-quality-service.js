@@ -22,6 +22,7 @@ export function assessReportQuality(markdown, options = {}) {
     identity: assessIdentity(options.companyIdentity, findings)
   };
   assessStructuredArtifacts(options, findings);
+  assessEvidenceTrust(options.evidenceManifest, findings);
   const score = Object.values(components).reduce((sum, value) => sum + value, 0);
   const fatalCount = findings.filter((item) => item.severity === "fatal").length;
   return {
@@ -35,7 +36,8 @@ export function assessReportQuality(markdown, options = {}) {
       document: options.document,
       businessAudit: options.businessAudit,
       claimLedger: options.claimLedger,
-      investmentAnalysis: options.investmentAnalysis
+      investmentAnalysis: options.investmentAnalysis,
+      evidenceManifest: options.evidenceManifest
     }),
     findings
   };
@@ -181,7 +183,21 @@ function assessStructuredArtifacts({ businessAudit, claimLedger, investmentAnaly
   }
 }
 
-function buildQualityMetrics({ text, sources, crossCheck, document, businessAudit, claimLedger, investmentAnalysis }) {
+function assessEvidenceTrust(manifest, findings) {
+  if (!manifest?.summary) return;
+  const open = Number(manifest.summary.openHighPriorityDocumentCitations || 0);
+  const failed = Number(manifest.summary.failedCitations || 0);
+  if (open) {
+    findings.push(finding(
+      "high_priority_citation_unverified",
+      "fatal",
+      `${open} 条高优先级声明缺少可在 BP 原文中复核的逐字引用`
+    ));
+  }
+  if (failed) findings.push(finding("citation_quote_not_found", "warn", `${failed} 条引用未能在对应来源中定位`));
+}
+
+function buildQualityMetrics({ text, sources, crossCheck, document, businessAudit, claimLedger, investmentAnalysis, evidenceManifest }) {
   const evidenceRichCount = sources.filter(hasEvidenceExcerpt).length;
   const coverage = Array.isArray(crossCheck?.coverage) ? crossCheck.coverage : [];
   const coveredClaimCount = coverage.filter((item) => item.status && item.status !== "unverified" || item.hasCandidateEvidence).length;
@@ -203,6 +219,9 @@ function buildQualityMetrics({ text, sources, crossCheck, document, businessAudi
     competitorCount: Number(investmentAnalysis?.competitorMatrix?.rows?.length || 0),
     investmentVetoCount: Number(investmentAnalysis?.decision?.vetoItems?.length || 0),
     versionChangeCount: Number(investmentAnalysis?.versionComparison?.changes?.length || 0),
+    verifiedCitationCount: Number(evidenceManifest?.summary?.verifiedCitations || 0),
+    traceableDocumentClaimCount: Number(evidenceManifest?.summary?.traceableDocumentClaims || 0),
+    openHighPriorityDocumentCitationCount: Number(evidenceManifest?.summary?.openHighPriorityDocumentCitations || 0),
     reportCharacterCount: text.length,
     extractionCompleteness: Number(document?.extractionCompleteness ?? 1)
   };
