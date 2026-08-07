@@ -120,3 +120,25 @@ test("OCR probe stops remaining candidates when it adds no useful text", async (
   assert.deepEqual(batches, [[1, 4]]);
   assert.ok(progress.some((message) => message.includes("已跳过剩余 4 页")));
 });
+
+test("OCR avoids pdf-parse image probing and directly budgets low-density pages", async () => {
+  let imageProbeCalls = 0;
+  const service = createPdfOcrService({
+    createParser: () => ({
+      getImage: async () => { imageProbeCalls += 1; throw new Error("unsafe image probe"); },
+      getScreenshot: async ({ partial }) => ({ pages: partial.map((page) => ({ pageNumber: page, data: Buffer.from(`page-${page}`) })) }),
+      destroy: async () => {}
+    }),
+    createOcrWorker: async () => ({ recognize: async () => ({ data: { text: "OCR 补充内容" } }), terminate: async () => {} }),
+    createLanguageDirectory: async () => ({ path: "/tmp/mock", cleanup: async () => {} }),
+    directTextThreshold: 40,
+    textThreshold: 120
+  });
+  const result = await service.enhance({
+    buffer: Buffer.from("pdf"),
+    pages: [{ page: 1, text: "原生文字内容".repeat(12) }],
+    pageCount: 1
+  });
+  assert.equal(imageProbeCalls, 0);
+  assert.equal(result.ocrPageCount, 1);
+});

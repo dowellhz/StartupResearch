@@ -24,8 +24,8 @@ export function createPdfOcrService({
   async function enhance({ buffer, pages = [], pageCount = pages.length } = {}, context = {}) {
     const selection = { directTextThreshold, textThreshold };
     const textTargets = selectOcrTargets(pages, { ...selection, maxOcrPages: Number.POSITIVE_INFINITY });
-    const imageCheckPages = selectImageCheckPages(pages, selection).filter((page) => !textTargets.includes(page));
-    if (!textTargets.length && !imageCheckPages.length) return {
+    const lowDensityTargets = selectImageCheckPages(pages, selection).filter((page) => !textTargets.includes(page));
+    if (!textTargets.length && !lowDensityTargets.length) return {
       pages,
       ocrPageCount: 0,
       ocrCandidatePageCount: 0,
@@ -40,8 +40,7 @@ export function createPdfOcrService({
     let skippedOcrPages = [];
     try {
       parser = createParser(buffer);
-      const imagePages = await detectImagePages(parser, imageCheckPages);
-      const allTargets = rankAndLimitTargets([...textTargets, ...imagePages], pages, Number.POSITIVE_INFINITY);
+      const allTargets = rankAndLimitTargets([...textTargets, ...lowDensityTargets], pages, Number.POSITIVE_INFINITY);
       targets = rankAndLimitTargets(allTargets, pages, maxOcrPages);
       skippedOcrPages = allTargets.filter((page) => !targets.includes(page));
       if (!targets.length) return {
@@ -168,16 +167,6 @@ export function imageHeavyPages(result, { minimumWidth = 320, minimumHeight = 18
     }))
     .map((page) => Number(page.pageNumber || 0))
     .filter(Boolean);
-}
-
-async function detectImagePages(parser, candidates) {
-  if (!candidates.length || typeof parser?.getImage !== "function") return [];
-  try {
-    const result = await parser.getImage({ partial: candidates, imageThreshold: 120, imageBuffer: false, imageDataUrl: false });
-    return imageHeavyPages(result);
-  } catch {
-    return [];
-  }
 }
 
 function rankAndLimitTargets(targets, pages, limit) {
