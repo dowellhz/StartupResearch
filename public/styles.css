@@ -107,7 +107,9 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .chat-answer-card { background: var(--paper-strong); border: 1px solid var(--line); border-radius: 5px 17px 17px 17px; box-shadow: var(--shadow); overflow: hidden; }
 .progress-panel { background: var(--paper-strong); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 8px 28px rgba(42,39,33,.06); }
 .progress-header { padding: 16px 18px 13px; border-bottom: 1px solid #ebe7df; display: flex; align-items: center; }
+.progress-header > div { display: flex; align-items: baseline; gap: 9px; }
 .progress-header strong { font: 600 17px Georgia, "Songti SC", serif; }
+.progress-count { color: var(--muted); font-size: 11px; }
 .progress-badge { margin-left: auto; background: #f2e6df; color: var(--accent-dark); border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 700; }
 .followup-answer { border-top: 1px solid #e8e4dc; background: #fffefb; }
 .followup-answer-label { padding: 14px 30px 0; color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .15em; }
@@ -117,6 +119,7 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .stage:not(:last-child)::after { content: ""; position: absolute; left: 7px; top: 28px; bottom: -4px; border-left: 1px solid #ddd8cf; }
 .stage-icon { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #cfcac1; display: grid; place-items: center; color: transparent; background: #fff; z-index: 1; font-size: 9px; }
 .stage.running .stage-icon { border-color: var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
+.stage.running { margin: 0 -10px; padding-left: 10px; padding-right: 10px; border-radius: 9px; background: #faf1ec; }
 .stage.completed .stage-icon, .stage.restored .stage-icon { background: var(--green); border-color: var(--green); color: #fff; animation: none; }
 .stage.failed .stage-icon { background: var(--accent); border-color: var(--accent); color: #fff; }
 @keyframes spin { to { transform: rotate(360deg); } }

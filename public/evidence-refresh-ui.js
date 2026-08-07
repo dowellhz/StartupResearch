@@ -6,7 +6,7 @@ export function isEvidenceRefreshActive(refresh) {
   return ["queued", "running"].includes(refresh?.status);
 }
 
-export function createEvidenceRefreshController({ state, container, requestJson, connectEvents, notify, scrollBottom, refreshHistory, confirmImpl = window.confirm }) {
+export function createEvidenceRefreshController({ state, container, requestJson, connectEvents, closeEvents = () => {}, notify, scrollBottom, refreshHistory, confirmImpl = window.confirm }) {
   function render(review = state.currentReview) {
     return renderEvidenceRefresh(container, { refresh: review?.evidenceRefresh, result: review?.lastEvidenceRefresh });
   }
@@ -38,7 +38,7 @@ export function createEvidenceRefreshController({ state, container, requestJson,
   function complete(data) {
     apply(data);
     setButtonDisabled(false);
-    state.eventSource?.close();
+    closeEvents();
     refreshHistory();
     notify(data.result?.warning ? t("refresh.degraded", { zh: "资料刷新完成，但有降级提示" }) : t("refresh.completed", { zh: "公开资料变化报告已生成" }));
   }
@@ -46,7 +46,7 @@ export function createEvidenceRefreshController({ state, container, requestJson,
   function fail(data) {
     apply(data);
     setButtonDisabled(false);
-    state.eventSource?.close();
+    closeEvents();
     notify(data.message || t("refresh.failed", { zh: "公开资料刷新失败" }));
   }
 

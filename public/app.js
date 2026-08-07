@@ -18,9 +18,10 @@ import { applyUploadRouting, fileToBase64, submitUploadedBp } from "./review-sub
 import { formatBytes, renderReviewRequest } from "./review-request-message.js";
 import { enterUploadedBpCompanyContext, restoreCurrentCompanyContext, setUploadAnalysisState } from "./upload-company-context.js";
 import { sanitizeVisibleFilename } from "./privacy-redaction.js";
-import { progressStageCopy } from "./progress-stage-copy.js";
 import { renderQualitySummary } from "./quality-summary.js";
 import { createReanalyzeController } from "./reanalyze-controller.js";
+import { createReviewEventSourceController } from "./review-event-source-controller.js";
+import { renderReviewProgressPanel, updateReviewStages } from "./review-progress-panel.js";
 import { createResearchSubmissionController } from "./research-submission-controller.js";
 import { focusResearchStart } from "./research-view-focus.js";
 import { runFollowup } from "./followup-controller.js";
@@ -82,7 +83,6 @@ const draft = createComposerDraftController({
 const state = {
   currentId: "",
   currentReview: null,
-  eventSource: null,
   file: null,
   report: "",
   reportRenderTimer: null,
@@ -94,7 +94,12 @@ const state = {
 const taskMode = createComposerTaskModeController({ elements, state, clearAttachment: clearFile });
 const noAttachmentConfirmation = createConfirmationDialogController({ dialog: elements.noAttachmentDialog });
 const evidenceRefreshController = createEvidenceRefreshController({ state, container: elements.messageStream, requestJson,
-  connectEvents, notify: toast, scrollBottom, refreshHistory: loadHistory });
+  connectEvents, closeEvents: () => reviewEvents.close(), notify: toast, scrollBottom, refreshHistory: loadHistory });
+const reviewEvents = createReviewEventSourceController({ requestJson,
+  shouldContinue: (review) => ["queued", "running"].includes(review?.status) || isEvidenceRefreshActive(review?.evidenceRefresh),
+  onSnapshot: applySnapshot, onStage: applyStage, onReportDelta: applyReportDelta, onReportComplete: completeReport,
+  onRefreshSnapshot: evidenceRefreshController.apply, onRefreshStage: evidenceRefreshController.apply,
+  onRefreshComplete: evidenceRefreshController.complete, onRefreshError: evidenceRefreshController.fail, onTaskError: handleTaskError });
 const researchSubmission = createResearchSubmissionController({ elements, state, taskMode, requestJson, draft, setBusy, notify: toast,
   showConversation, renderProgressPanel, focusCurrentResearchStart, connectEvents, loadHistory, clearFile });
 const reanalyzeCurrentReview = createReanalyzeController({ state, requestJson, renderProgress: renderProgressPanel, connectEvents,
@@ -244,23 +249,12 @@ async function startCompanyPreResearch(prompt) {
   return researchSubmission.start(COMPANY_PRE_RESEARCH, prompt);
 }
 function connectEvents(id) {
-  state.eventSource?.close();
-  const source = new EventSource(`/api/reviews/${id}/events`);
-  state.eventSource = source;
-  source.addEventListener("snapshot", ({ data }) => applySnapshot(JSON.parse(data)));
-  source.addEventListener("stage", ({ data }) => applyStage(JSON.parse(data)));
-  source.addEventListener("report_delta", ({ data }) => applyReportDelta(JSON.parse(data).delta));
-  source.addEventListener("report_complete", ({ data }) => completeReport(JSON.parse(data)));
-  source.addEventListener("refresh_snapshot", ({ data }) => evidenceRefreshController.apply(JSON.parse(data)));
-  source.addEventListener("refresh_stage", ({ data }) => evidenceRefreshController.apply(JSON.parse(data)));
-  source.addEventListener("refresh_complete", ({ data }) => evidenceRefreshController.complete(JSON.parse(data)));
-  source.addEventListener("refresh_error", ({ data }) => evidenceRefreshController.fail(JSON.parse(data)));
-  source.addEventListener("error", (event) => {
-    if (!event.data) return;
-    const data = JSON.parse(event.data);
-    if (applyRecoverableReport(data, { state, renderReportContent, renderProgressPanel })) state.eventSource?.close();
-    showError(data.message || t("error.taskFailed", { zh: "任务执行失败" }));
-  });
+  reviewEvents.connect(id);
+}
+
+function handleTaskError(data) {
+  if (applyRecoverableReport(data, { state, renderReportContent, renderProgressPanel })) reviewEvents.close();
+  showError(data.message || t("error.taskFailed", { zh: "任务执行失败" }));
 }
 
 function applySnapshot(review) {
@@ -275,7 +269,7 @@ function applySnapshot(review) {
 }
 
 function applyStage(stage) {
-  state.stages = state.stages.map((item) => item.key === stage.key ? { ...item, ...stage } : item);
+  state.stages = updateReviewStages(state.stages, stage);
   applyDetectedCompany(stage, { state, elements, saveDraft: draft.save, refreshHistory: loadHistory });
   renderProgressPanel();
 }
@@ -299,7 +293,7 @@ function completeReport(data, { keepEvents = false } = {}) {
   renderFollowupSuggestions(document.querySelector("#followupSuggestions"), followupSuggestions, askSuggestedFollowup);
   elements.promptInput.placeholder = t("composer.riskFollowup", { zh: "继续追问：最大的投资风险是什么？" });
   elements.companyInput.disabled = true;
-  if (!keepEvents) state.eventSource?.close();
+  if (!keepEvents) reviewEvents.close();
   loadHistory();
   scrollBottom();
 }
@@ -361,28 +355,8 @@ function showConversation() {
 }
 
 function renderProgressPanel() {
-  let panel = document.querySelector("#progressMessage");
-  if (!panel) {
-    elements.messageStream.insertAdjacentHTML("beforeend", `
-      <article class="message assistant" id="progressMessage">
-        <div class="message-meta"><span class="avatar">VL</span>${t("progress.agent", { zh: "研究代理" })}</div>
-        <div class="assistant-card"><div class="progress-panel"><div class="progress-header"><strong>${t("progress.running", { zh: "研究进行中" })}</strong><span class="progress-badge">LIVE</span></div><div class="stage-list"></div></div></div>
-      </article>`);
-    panel = document.querySelector("#progressMessage");
-  }
-  const list = panel.querySelector(".stage-list");
-  list.innerHTML = state.stages.map((stage) => { const copy = progressStageCopy(stage); return `
-    <div class="stage ${escapeHtml(stage.status)}">
-      <span class="stage-icon">${["completed", "restored"].includes(stage.status) ? "✓" : stage.status === "failed" ? "!" : ""}</span>
-      <div><strong>${escapeHtml(copy.label)}</strong><p>${escapeHtml(copy.message)}</p></div>
-      <span class="stage-time">${copy.time}</span>
-    </div>`; }).join("");
-  const taskLabel = taskTypeLabels(state.currentReview?.taskType).task;
-  panel.querySelector(".progress-header strong").textContent = state.currentReview?.reportAvailable
-    ? t("progress.taskDone", { zh: `${taskLabel}已完成`, task: taskLabel })
-    : t("progress.taskRunning", { zh: `${taskLabel}进行中`, task: taskLabel });
-  panel.querySelector(".progress-badge").textContent = state.currentReview?.reportAvailable ? "DONE" : "LIVE";
-  scrollBottom();
+  renderReviewProgressPanel({ container: elements.messageStream, stages: state.stages,
+    taskType: state.currentReview?.taskType, reportAvailable: state.currentReview?.reportAvailable, scrollBottom });
 }
 
 function focusCurrentResearchStart() {
@@ -474,7 +448,7 @@ function showError(message) {
 }
 
 function resetWorkspace() {
-  state.eventSource?.close();
+  reviewEvents.close();
   Object.assign(state, { currentId: "", currentReview: null, file: null, report: "", stages: [], autoFollow: true });
   elements.emptyState.classList.remove("hidden");
   elements.messageStream.classList.add("hidden");
