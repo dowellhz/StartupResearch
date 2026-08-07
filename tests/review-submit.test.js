@@ -40,3 +40,19 @@ test("an attachment dragged into a company research conversation starts the orig
   assert.equal(request.url, "/api/reviews");
   assert.equal(JSON.parse(request.options.body).file.filename, "meeting.pdf");
 });
+
+test("a new BP always creates a separate review even when the current review is complete", async () => {
+  let request;
+  const requestJson = async (url, options) => { request = { url, options }; return { ok: true }; };
+  await submitUploadedBp({
+    requestJson,
+    currentId: "bp_existing",
+    currentReview: { taskType: "attachment_review", reportAvailable: true },
+    companyName: "华震工业",
+    instruction: "核查新 BP",
+    file: { name: "new-bp.pdf", type: "application/pdf", size: 12 },
+    data: "cGRm"
+  });
+  assert.equal(request.url, "/api/reviews");
+  assert.equal(JSON.parse(request.options.body).apply, undefined);
+});

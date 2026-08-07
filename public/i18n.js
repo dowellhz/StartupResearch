@@ -129,6 +129,7 @@ const EN = Object.freeze({
   "validation.fileSize": "The file must be 20 MB or smaller",
   "file.paperPending": "Ready for paper analysis",
   "file.companyPending": "The company will be identified and conversation routing decided after submission",
+  "file.newConversationPending": "The BP will be identified and reviewed in a new conversation",
   "file.reviewPending": "Ready for review",
   "instruction.bp": "Review this BP comprehensively",
   "instruction.material": "Review this material comprehensively",

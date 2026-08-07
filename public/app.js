@@ -14,9 +14,9 @@ import { requestJson, requestResponse } from "./http-client.js";
 import { downloadConversationPdf, downloadReviewPdf, syncConversationPdfButton } from "./pdf-download.js";
 import { applyDetectedCompany } from "./review-identity.js";
 import { applyRecoverableReport } from "./review-error.js";
-import { applyUploadRouting, fileToBase64, submitUploadedBp } from "./review-submit.js";
+import { fileToBase64, submitUploadedBp } from "./review-submit.js";
 import { formatBytes, renderReviewRequest } from "./review-request-message.js";
-import { enterUploadedBpCompanyContext, restoreCurrentCompanyContext, setUploadAnalysisState } from "./upload-company-context.js";
+import { restoreCurrentCompanyContext, setUploadAnalysisState, shouldStartNewAttachmentConversation } from "./upload-company-context.js";
 import { sanitizeVisibleFilename } from "./privacy-redaction.js";
 import { renderQualitySummary } from "./quality-summary.js";
 import { createReanalyzeController } from "./reanalyze-controller.js";
@@ -165,13 +165,13 @@ function selectFile(file) {
   if (fileTaskType === PAPER_ANALYSIS && extension !== "pdf") return toast(t("validation.paperPdf", { zh: "论文解读仅支持 PDF 文件" }));
   if (!allowed.includes(extension)) return toast(t("validation.fileTypes", { zh: "请上传 PDF、PPTX、DOCX、TXT 或 Markdown" }));
   if (file.size > 20 * 1024 * 1024) return toast(t("validation.fileSize", { zh: "文件不能超过 20 MB" }));
+  const startsNewConversation = fileTaskType !== PAPER_ANALYSIS && shouldStartNewAttachmentConversation(state.currentReview);
+  if (startsNewConversation) resetWorkspace();
   if (fileTaskType === PAPER_ANALYSIS) taskMode.selectPaperAnalysisMode();
   else taskMode.selectAttachmentMode();
   state.file = file;
-  const attachmentReview = fileTaskType === PAPER_ANALYSIS || state.currentReview?.taskType !== ATTACHMENT_REVIEW ? null : state.currentReview;
-  const matchingRequired = enterUploadedBpCompanyContext(elements.companyInput, attachmentReview);
   elements.fileName.textContent = sanitizeVisibleFilename(file.name);
-  elements.fileMeta.textContent = `${formatBytes(file.size)} · ${fileTaskType === PAPER_ANALYSIS ? t("file.paperPending", { zh: "等待论文解读" }) : matchingRequired ? t("file.companyPending", { zh: "提交后识别公司并判断是否新建对话" }) : t("file.reviewPending", { zh: "等待核查" })}`;
+  elements.fileMeta.textContent = `${formatBytes(file.size)} · ${fileTaskType === PAPER_ANALYSIS ? t("file.paperPending", { zh: "等待论文解读" }) : startsNewConversation ? t("file.newConversationPending", { zh: "将在新对话中识别并核查" }) : t("file.reviewPending", { zh: "等待核查" })}`;
   elements.filePreview.classList.remove("hidden");
 }
 function clearFile() {
@@ -203,22 +203,19 @@ async function submitComposer(event) {
   if (submission === PAPER_ANALYSIS_SUBMISSION) return researchSubmission.start(PAPER_ANALYSIS, prompt);
   if (submission !== ATTACHMENT_SUBMISSION) return;
   const companyName = elements.companyInput.value.trim();
-  setUploadAnalysisState(elements, { active: true, matchingRequired: Boolean(state.currentReview?.reportAvailable) });
+  setUploadAnalysisState(elements, { active: true });
   setBusy(true);
   try {
     const data = await fileToBase64(state.file);
     const file = state.file;
     const payload = await submitUploadedBp({
       requestJson,
-      currentId: state.currentId,
-      currentReview: state.currentReview,
       companyName,
       instruction: prompt || t("instruction.bp", { zh: "全面核查这份 BP" }),
       outputLanguage: getLanguage(),
       file,
       data
     });
-    applyUploadRouting(payload, { elements, state, notify: toast });
     state.currentId = payload.review.id;
     state.currentReview = payload.review;
     state.stages = payload.review.stages || [];
@@ -226,6 +223,7 @@ async function submitComposer(event) {
     elements.companyInput.value = payload.review.companyName || payload.decision?.newCompanyName || "";
     elements.companyInput.disabled = false;
     showConversation();
+    elements.messageStream.innerHTML = "";
     renderReviewRequest(elements.messageStream, { company: payload.review.companyName || payload.decision?.newCompanyName || companyName, prompt: prompt || t("instruction.material", { zh: "全面核查这份材料" }), file, taskType: ATTACHMENT_REVIEW });
     draft.clearCompany();
     draft.clearPrompt();
