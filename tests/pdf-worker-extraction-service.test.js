@@ -23,6 +23,15 @@ test("PDF worker extraction terminates a hung parser at its time budget", async 
   assert.equal(worker.terminated, 1);
 });
 
+test("PDF worker accepts a result queued immediately after a clean exit event", async () => {
+  const worker = fakeWorker((instance) => {
+    instance.emit("exit", 0);
+    setImmediate(() => instance.emit("message", { type: "result", value: { text: "late result", pageCount: 1 } }));
+  });
+  const service = createPdfWorkerExtractionService({ timeoutMs: 1000, exitGraceMs: 25, createWorker: () => worker });
+  assert.deepEqual(await service.extract({ buffer: Buffer.from("pdf") }), { text: "late result", pageCount: 1 });
+});
+
 function fakeWorker(start) {
   const worker = new EventEmitter();
   worker.terminated = 0;

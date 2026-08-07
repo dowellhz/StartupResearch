@@ -9,21 +9,22 @@ export function createPdfWorkerExtractionService({
     ...options,
     execArgv: process.execArgv.filter((argument) => !argument.startsWith("--input-type"))
   }),
-  terminationTimeoutMs = 3000
+  terminationTimeoutMs = 3000,
+  exitGraceMs = 25
 } = {}) {
   const budget = Math.max(100, Number(timeoutMs) || DEFAULT_TIMEOUT_MS);
 
   function extract({ buffer } = {}, context = {}) {
     return queue.run(async () => {
       throwIfAborted(context.signal);
-      return runWorker({ buffer, context, budget, createWorker, terminationTimeoutMs });
+      return runWorker({ buffer, context, budget, createWorker, terminationTimeoutMs, exitGraceMs });
     });
   }
 
   return { extract };
 }
 
-function runWorker({ buffer, context, budget, createWorker, terminationTimeoutMs }) {
+function runWorker({ buffer, context, budget, createWorker, terminationTimeoutMs, exitGraceMs }) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let worker;
@@ -43,7 +44,9 @@ function runWorker({ buffer, context, budget, createWorker, terminationTimeoutMs
     });
     worker.on("error", (error) => finish(error));
     worker.on("exit", (code) => {
-      if (!settled) finish(new Error(code === 0 ? "PDF Worker 未返回解析结果" : `PDF Worker 异常退出（${code}）`));
+      setTimeout(() => {
+        if (!settled) finish(new Error(code === 0 ? "PDF Worker 未返回解析结果" : `PDF Worker 异常退出（${code}）`));
+      }, Math.max(0, Number(exitGraceMs) || 0));
     });
 
     async function finish(error, value) {
