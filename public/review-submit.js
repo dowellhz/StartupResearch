@@ -1,8 +1,13 @@
-export function submitUploadedBp({ requestJson, companyName, instruction, outputLanguage, file, data }) {
-  return requestJson("/api/reviews", {
+import { t } from "./i18n.js";
+
+export function submitUploadedBp({ requestJson, currentId, currentReview, companyName, instruction, outputLanguage, file, data }) {
+  const shouldMatch = Boolean(currentId && currentReview?.reportAvailable && (!currentReview.taskType || currentReview.taskType === "attachment_review"));
+  const url = shouldMatch ? `/api/reviews/${currentId}/company-match` : "/api/reviews";
+  return requestJson(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      ...(shouldMatch ? { apply: true } : {}),
       companyName,
       instruction,
       outputLanguage,
@@ -49,4 +54,19 @@ export function fileToBase64(file) {
     reader.onerror = () => reject(new Error("读取文件失败"));
     reader.readAsDataURL(file);
   });
+}
+
+export function applyUploadRouting(payload, { elements, state, notify }) {
+  if (payload.action === "created_new") {
+    elements.messageStream.innerHTML = "";
+    state.autoFollow = true;
+    const company = payload.decision?.newCompanyName || t("history.unnamed", { zh: "待识别公司" });
+    notify(t("routing.newCompany", { zh: `识别为新公司，已切换到新对话：${company}`, company }));
+    return "created_new";
+  }
+  if (payload.action === "reanalyze_current") {
+    notify(t("routing.sameCompany", { zh: "识别为同一公司，正在当前对话中核查补充材料" }));
+    return "reanalyze_current";
+  }
+  return "created_directly";
 }

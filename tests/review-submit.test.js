@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { submitCompanyPreResearch, submitIndustryResearch, submitPaperAnalysis, submitUploadedBp } from "../public/review-submit.js";
+import { applyUploadRouting, submitCompanyPreResearch, submitIndustryResearch, submitPaperAnalysis, submitUploadedBp } from "../public/review-submit.js";
 
 test("company pre-research submits an explicit task type without an attachment", async () => {
   let request;
@@ -41,7 +41,7 @@ test("an attachment dragged into a company research conversation starts the orig
   assert.equal(JSON.parse(request.options.body).file.filename, "meeting.pdf");
 });
 
-test("a new BP always creates a separate review even when the current review is complete", async () => {
+test("a new BP is identity-routed when the current attachment review is complete", async () => {
   let request;
   const requestJson = async (url, options) => { request = { url, options }; return { ok: true }; };
   await submitUploadedBp({
@@ -53,6 +53,24 @@ test("a new BP always creates a separate review even when the current review is 
     file: { name: "new-bp.pdf", type: "application/pdf", size: 12 },
     data: "cGRm"
   });
-  assert.equal(request.url, "/api/reviews");
-  assert.equal(JSON.parse(request.options.body).apply, undefined);
+  assert.equal(request.url, "/api/reviews/bp_existing/company-match");
+  assert.equal(JSON.parse(request.options.body).apply, true);
+});
+
+test("company identity routing switches views only after a new company is identified", () => {
+  const state = { autoFollow: false };
+  const elements = { messageStream: { innerHTML: "old conversation" } };
+  const notices = [];
+  const route = applyUploadRouting({
+    action: "created_new",
+    decision: { newCompanyName: "华震工业" }
+  }, { elements, state, notify: (message) => notices.push(message) });
+  assert.equal(route, "created_new");
+  assert.equal(elements.messageStream.innerHTML, "");
+  assert.equal(state.autoFollow, true);
+  assert.match(notices[0], /华震工业/);
+
+  elements.messageStream.innerHTML = "same company conversation";
+  assert.equal(applyUploadRouting({ action: "reanalyze_current" }, { elements, state, notify: (message) => notices.push(message) }), "reanalyze_current");
+  assert.equal(elements.messageStream.innerHTML, "same company conversation");
 });

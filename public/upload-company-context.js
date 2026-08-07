@@ -2,8 +2,14 @@ import { LANGUAGE_EN, getLanguage, t } from "./i18n.js";
 
 function defaultPlaceholder() { return t("composer.companyPlaceholder", { zh: "公司名称（可选，可从 BP 识别）" }); }
 
-export function shouldStartNewAttachmentConversation(currentReview) {
-  return Boolean(currentReview?.reportAvailable);
+export function enterUploadedBpCompanyContext(companyInput, currentReview) {
+  if (!currentReview?.reportAvailable) return false;
+  companyInput.value = "";
+  companyInput.disabled = false;
+  companyInput.placeholder = getLanguage() === LANGUAGE_EN
+    ? "Company name (optional; identified from the new BP)"
+    : "公司名称（可选，可从新 BP 识别）";
+  return true;
 }
 
 export function restoreCurrentCompanyContext(companyInput, currentReview) {
@@ -13,15 +19,15 @@ export function restoreCurrentCompanyContext(companyInput, currentReview) {
   companyInput.disabled = true;
 }
 
-export function setUploadAnalysisState({ filePreview, fileMeta, removeFile }, { active } = {}) {
+export function setUploadAnalysisState({ filePreview, fileMeta, removeFile }, { active, matchingRequired = false } = {}) {
   filePreview.classList.toggle("is-analyzing", active);
   filePreview.setAttribute("aria-busy", String(active));
   removeFile.disabled = active;
   if (active) {
     filePreview.dataset.idleMeta = fileMeta.textContent;
-    fileMeta.textContent = getLanguage() === LANGUAGE_EN
-      ? "Uploading and parsing BP in a new conversation…"
-      : "正在新对话中上传并解析 BP…";
+    fileMeta.textContent = matchingRequired
+      ? getLanguage() === LANGUAGE_EN ? "Parsing BP and identifying whether it belongs to the current company…" : "正在解析 BP，并判断是否属于当前公司…"
+      : getLanguage() === LANGUAGE_EN ? "Uploading and parsing BP…" : "正在上传并解析 BP…";
   } else if (filePreview.dataset.idleMeta) {
     fileMeta.textContent = filePreview.dataset.idleMeta;
     delete filePreview.dataset.idleMeta;
