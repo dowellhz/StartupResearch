@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "description": "DeepSeek-powered business plan review workspace",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
