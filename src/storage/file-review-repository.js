@@ -7,6 +7,7 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
   const uploadsDir = path.join(dataDir, "uploads");
   const pdfsDir = path.join(dataDir, "pdfs");
   const deletedConversationsDir = path.join(dataDir, "deleted-conversations");
+  const ownerOverrides = new Map();
 
   async function initialize() {
     await Promise.all([
@@ -20,7 +21,7 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
 
   async function save(job) {
     await initialize();
-    const normalized = { ...job, updatedAt: now() };
+    const normalized = { ...job, ownerId: ownerOverrides.get(job.id) || job.ownerId, updatedAt: now() };
     const target = jobPath(normalized.id);
     const temporary = `${target}.${process.pid}.tmp`;
     await writeFile(temporary, JSON.stringify(normalized, null, 2), "utf8");
@@ -59,6 +60,16 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
     const unowned = jobs.filter((job) => !job.ownerId);
     for (const job of unowned) await save({ ...job, ownerId });
     return unowned.length;
+  }
+
+  async function transferOwnership(fromOwnerId, toOwnerId) {
+    if (!fromOwnerId || !toOwnerId || fromOwnerId === toOwnerId) return 0;
+    const jobs = await list({ limit: 10000, ownerId: fromOwnerId });
+    for (const job of jobs) {
+      ownerOverrides.set(job.id, toOwnerId);
+      await save({ ...job, ownerId: toOwnerId });
+    }
+    return jobs.length;
   }
 
   async function saveReport(id, markdown) {
@@ -189,7 +200,7 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
     return path.join(uploadsDir, `${safeId(id)}.source`);
   }
 
-  return { archiveConversation, archiveReport, claimUnowned, get, getPdf, getReport, getUpload, initialize, list, save, savePdf, saveReport, saveUpload };
+  return { archiveConversation, archiveReport, claimUnowned, get, getPdf, getReport, getUpload, initialize, list, save, savePdf, saveReport, saveUpload, transferOwnership };
 }
 
 async function moveIfPresent(source, target) {

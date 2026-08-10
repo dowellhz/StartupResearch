@@ -18,7 +18,7 @@
 
 报告完成后可手动“刷新公开资料”。每次刷新最多使用 8 个查询，只增量更新证据库和声明状态，并生成独立的公开资料变化报告；原 BP 报告不会被覆盖。系统明确区分真实事实变化、本次新找到的旧证据、证据冲突和无法判断，本次搜索未返回某来源不会被解释为事实消失。
 
-系统不要求登录。首次访问时由服务端签发长期有效的匿名浏览器 Cookie；任务列表、报告、SSE 进度、追问、重试和 PDF 下载均按该浏览器隔离。同一浏览器再次打开仍保留原界面和历史；清除 Cookie、无痕模式或更换浏览器会被视为新用户。
+系统支持匿名浏览器隔离和 Google 登录两种身份方式。未配置 Google OAuth 时保持原有匿名模式；配置凭证且 `GOOGLE_AUTH_REQUIRED=false` 时，用户可以选择登录 Google 账号，也可以继续匿名使用；设为 `true` 时，除健康检查和登录回调外，必须登录后才能使用。匿名用户首次访问时由服务端签发长期有效的浏览器 Cookie；登录后会把当前浏览器中的既有任务迁移到 Google 账号，从而可以跨浏览器访问。
 
 ## 启动
 
@@ -38,6 +38,18 @@ DEEPSEEK_API_KEY=...
 DEEPSEEK_BASE_URL=https://api.deepseek.com/chat/completions
 DEEPSEEK_MODEL=deepseek-chat
 ```
+
+Google 登录使用 OAuth 2.0 / OpenID Connect，不需要 Google API Key，但需要在 Google Cloud Console 创建 Web OAuth 客户端。生产环境的授权重定向 URI 应配置为 `https://c.nlvcwiki.com/auth/google/callback`：
+
+```dotenv
+GOOGLE_AUTH_REQUIRED=false
+GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://c.nlvcwiki.com/auth/google/callback
+AUTH_SESSION_SECRET=至少32字符的随机字符串
+```
+
+只有四项凭证全部配置后，页面才显示可选的 Google 登录入口。`GOOGLE_AUTH_REQUIRED` 默认为 `false`；如需开启强制登录，应先确认 OAuth 登录回调正常，再将其改为 `true`。
 
 ## 支持格式
 

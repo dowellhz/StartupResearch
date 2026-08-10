@@ -29,3 +29,15 @@ test("uploads are stored below a YYYYMMDD directory", async (t) => {
 test("upload dates use Asia Shanghai calendar days", () => {
   assert.equal(formatUploadDate("2026-08-03T16:30:00Z"), "20260804");
 });
+
+test("Google login transfers anonymous jobs and protects the new owner from stale saves", async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "venture-lens-owner-"));
+  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const repository = createFileReviewRepository({ dataDir });
+  const stale = await repository.save({ id: "bp_owner_transfer", ownerId: "anon_old", status: "running" });
+  await repository.save({ id: "bp_other_owner", ownerId: "anon_other", status: "completed" });
+  assert.equal(await repository.transferOwnership("anon_old", "google_owner"), 1);
+  await repository.save({ ...stale, status: "completed" });
+  assert.equal((await repository.get("bp_owner_transfer")).ownerId, "google_owner");
+  assert.equal((await repository.get("bp_other_owner")).ownerId, "anon_other");
+});

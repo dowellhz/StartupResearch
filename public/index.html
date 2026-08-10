@@ -42,10 +42,14 @@
         <button class="icon-button mobile-menu" id="menuButton" aria-label="打开菜单" data-i18n-aria-label="top.menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
         <div class="conversation-title" id="conversationTitle" data-i18n="top.newBp">新建 BP 核查</div>
         <div class="top-actions">
+          <div class="google-auth-slot hidden" id="googleAuthSlot">
+            <button class="google-login hidden" id="googleLoginButton" type="button"><span>G</span><span data-i18n="auth.signIn">使用 Google 登录</span></button>
+            <div class="google-account hidden" id="googleAccount"><img class="hidden" id="googleAccountAvatar" alt=""><span id="googleAccountName"></span><button id="googleLogoutButton" type="button" data-i18n="auth.signOut">退出</button></div>
+          </div>
           <button class="top-pdf-download" id="conversationPdfButton" type="button" title="下载完整对话 PDF" aria-label="下载完整对话 PDF" data-i18n-title="top.download" data-i18n-aria-label="top.download" disabled>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4"/><path d="M8.5 15.5h7M8.5 18h5"/></svg><span>PDF</span>
           </button>
-          <span class="secure-label"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/></svg><span data-i18n="top.secure">匿名浏览器隔离</span></span>
+          <span class="secure-label"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/></svg><span id="secureLabelText" data-i18n="top.secure">匿名浏览器隔离</span></span>
         </div>
       </header>
 
@@ -119,7 +123,7 @@
     <p data-i18n="help.p1">系统会把 BP 内容视作待核实的公司自述，区分公开支持、存在冲突、仅 BP 自述、资料不足和分析推断。联网检索失败时仍会保留已有草稿，并明确披露限制。</p>
     <p data-i18n="help.p2">左侧可直接发起行业研究或论文解读。行业研究支持行业概览、技术研究、商业前景和投资价值；论文解读支持上传 PDF 或填写公开论文 URL。</p>
     <p data-i18n="help.p3">支持 PDF、PPTX、DOCX、TXT 和 Markdown，默认最大 20 MB。</p>
-    <p data-i18n="help.p4">无需登录。系统使用长期匿名浏览器 Cookie 隔离任务，同一浏览器再次打开仍能看到自己的历史、报告与聊天；清除 Cookie、使用无痕模式或更换浏览器后会成为新的匿名用户。</p>
+    <p id="privacyHelpText" data-i18n="help.p4">无需登录。系统使用长期匿名浏览器 Cookie 隔离任务，同一浏览器再次打开仍能看到自己的历史、报告与聊天；清除 Cookie、使用无痕模式或更换浏览器后会成为新的匿名用户。</p>
   </dialog>
   <dialog class="confirmation-dialog" id="noAttachmentDialog" aria-labelledby="noAttachmentDialogTitle" aria-describedby="noAttachmentDialogDescription">
     <form method="dialog">
@@ -135,5 +139,6 @@
   </dialog>
   <div class="toast-region" id="toastRegion"></div>
   <script type="module" src="/app.js"></script>
+  <script type="module" src="/google-auth-ui.js"></script>
 </body>
 </html>

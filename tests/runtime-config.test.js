@@ -11,10 +11,26 @@ test("runtime config normalizes DeepSeek endpoints without exposing defaults as 
   assert.equal(config.model.apiKey, "");
   assert.equal(config.model.credentialSource, DEEPSEEK_CREDENTIAL_FIELD);
   assert.equal(config.researchTools.openAlexApiKey, "");
+  assert.deepEqual(config.auth.google, { enabled: false, required: false, clientId: "", clientSecret: "", redirectUri: "", sessionSecret: "" });
   assert.equal(config.maxUploadBytes, 8 * 1024 * 1024);
   assert.equal(config.documents.pdfTimeoutMs, 120000);
   assert.equal(config.documents.pdfConcurrency, 1);
   assert.equal(config.recovery.staleAfterMs, 15 * 60 * 1000);
+});
+
+test("Google authentication availability and required mode are separate", () => {
+  const env = {
+    GOOGLE_CLIENT_ID: "client-id",
+    GOOGLE_CLIENT_SECRET: "client-secret",
+    GOOGLE_REDIRECT_URI: "https://example.com/auth/google/callback",
+    AUTH_SESSION_SECRET: "s".repeat(32)
+  };
+  const optional = getRuntimeConfig(env);
+  assert.equal(optional.auth.google.enabled, true);
+  assert.equal(optional.auth.google.required, false);
+  const required = getRuntimeConfig({ ...env, GOOGLE_AUTH_REQUIRED: "true" });
+  assert.equal(required.auth.google.enabled, true);
+  assert.equal(required.auth.google.required, true);
 });
 
 test("runtime config has one canonical DeepSeek credential field", () => {

@@ -25,6 +25,14 @@ export function loadEnvFile(filePath = path.resolve(".env")) {
 export function getRuntimeConfig(env = process.env) {
   const rootDir = path.resolve();
   const deepSeekApiKey = String(env[DEEPSEEK_CREDENTIAL_FIELD] || "").trim();
+  const googleAuth = {
+    clientId: String(env.GOOGLE_CLIENT_ID || "").trim(),
+    clientSecret: String(env.GOOGLE_CLIENT_SECRET || "").trim(),
+    redirectUri: String(env.GOOGLE_REDIRECT_URI || "").trim(),
+    sessionSecret: String(env.AUTH_SESSION_SECRET || "").trim(),
+    required: String(env.GOOGLE_AUTH_REQUIRED || "false").toLowerCase() === "true"
+  };
+  googleAuth.enabled = [googleAuth.clientId, googleAuth.clientSecret, googleAuth.redirectUri, googleAuth.sessionSecret].every(Boolean);
   return {
     host: env.HOST || "127.0.0.1",
     port: positiveNumber(env.PORT, 1234),
@@ -39,6 +47,9 @@ export function getRuntimeConfig(env = process.env) {
     },
     researchTools: {
       openAlexApiKey: String(env.OPENALEX_API_KEY || "").trim()
+    },
+    auth: {
+      google: googleAuth
     },
     documents: {
       pdfTimeoutMs: positiveNumber(env.PDF_EXTRACTION_TIMEOUT_MS, 120000),

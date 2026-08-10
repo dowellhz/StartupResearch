@@ -76,6 +76,15 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .top-pdf-download span { position: absolute; right: 2px; bottom: 2px; padding: 1px 2px; border-radius: 3px; background: var(--accent-dark); color: #fff; font: 700 6px/1 Arial, sans-serif; letter-spacing: .2px; }
 .top-pdf-download:hover:not(:disabled) { border-color: var(--accent); background: #fff; transform: translateY(-1px); box-shadow: 0 5px 14px rgba(87,39,28,.12); }
 .top-pdf-download:disabled { opacity: .35; cursor: default; }
+.google-auth-slot { display: flex; align-items: center; }
+.google-login { height: 36px; display: flex; align-items: center; gap: 8px; border: 1px solid #d6d1c8; border-radius: 9px; background: #fff; color: #4b4843; padding: 0 11px; font-size: 11px; font-weight: 650; cursor: pointer; }
+.google-login:hover { border-color: #bdb7ad; box-shadow: 0 4px 12px rgba(42,39,33,.08); }
+.google-login > span:first-child { color: #4285f4; font: 800 15px Arial, sans-serif; }
+.google-account { height: 36px; display: flex; align-items: center; gap: 7px; max-width: 240px; border: 1px solid #d6d1c8; border-radius: 999px; background: #fff; padding: 3px 5px 3px 3px; }
+.google-account img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+.google-account > span { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 650; }
+.google-account button { border: 0; border-left: 1px solid #e1ddd5; background: transparent; color: var(--muted); padding: 0 6px; font-size: 10px; cursor: pointer; }
+.google-account button:disabled { opacity: .5; }
 .icon-button { border: 0; background: transparent; padding: 5px; cursor: pointer; }
 .mobile-menu { display: none; }
 
@@ -266,6 +275,8 @@ dialog p:not(.eyebrow) { color: var(--muted); font-size: 14px; line-height: 1.8;
   .mobile-menu { display: grid; }
   .topbar { padding: 0 14px; }
   .secure-label { display: none; }
+  .google-account > span { display: none; }
+  .google-login > span:last-child { display: none; }
   .empty-state { padding-bottom: 180px; }
   .empty-state h1 { font-size: 28px; }
   .message-stream { width: calc(100% - 24px); }

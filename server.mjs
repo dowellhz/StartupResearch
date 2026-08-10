@@ -19,6 +19,7 @@ import { createBrowserSessionService } from "./src/infra/browser-session-service
 import { createBoundedTaskQueue } from "./src/infra/bounded-task-queue.js";
 import { createDocumentExtractionService } from "./src/infra/document-extraction-service.js";
 import { createEvidenceVerificationService } from "./src/infra/evidence-verification-service.js";
+import { createGoogleAuthService } from "./src/infra/google-auth-service.js";
 import { createLinkedPageResearchService } from "./src/infra/linked-page-research-service.js";
 import { createPdfReportService } from "./src/infra/pdf-report-service.js";
 import { createPdfWorkerExtractionService } from "./src/infra/pdf-worker-extraction-service.js";
@@ -48,6 +49,7 @@ const paperSourceFetcher = createLinkedPageResearchService({ documentExtractor: 
 const paperAnalysisPipeline = createPaperAnalysisPipeline({ extractor, model, repository, paperSourceFetcher, pdfReportService: pdf, webResearchEnabled: config.webResearchEnabled });
 const manager = createReviewManagerService({ pipeline, companyResearchPipeline, industryResearchPipeline, paperAnalysisPipeline, repository, model, evidenceRefreshService: evidenceRefresh });
 const browserSessions = createBrowserSessionService();
+const googleAuth = createGoogleAuthService({ config: config.auth.google });
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
 
 const server = http.createServer(async (req, res) => {
@@ -62,19 +64,40 @@ const server = http.createServer(async (req, res) => {
 async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const browserSession = browserSessions.resolve(req, res);
+  const authenticatedSession = googleAuth.resolve(req);
+  const ownerId = authenticatedSession?.ownerId || browserSession.id;
+  if (req.method === "GET" && url.pathname === "/api/auth/session") {
+    return json(res, 200, { ok: true, ...googleAuth.status(req) });
+  }
+  if (req.method === "GET" && url.pathname === "/auth/google") return googleAuth.begin(req, res, url);
+  if (req.method === "GET" && url.pathname === "/auth/google/callback") {
+    const session = await googleAuth.complete(req, res, url);
+    await repository.transferOwnership(browserSession.id, session.ownerId);
+    return redirect(res, session.returnTo);
+  }
+  if (req.method === "POST" && url.pathname === "/auth/logout") {
+    googleAuth.logout(req, res);
+    return json(res, 200, { ok: true });
+  }
   if (req.method === "GET" && url.pathname === "/api/health") {
     return json(res, 200, {
       ok: true,
       model: config.model.model,
       modelConfigured: Boolean(config.model.apiKey),
       modelCredentialSource: config.model.credentialSource,
+      googleAuthEnabled: googleAuth.enabled,
+      googleAuthRequired: googleAuth.required,
       webResearchEnabled: config.webResearchEnabled,
       zeroKeyResearchTools: researchTools.zeroKeyNames(),
       keyedResearchTools: researchTools.keyedStatus()
     });
   }
+  if (googleAuth.required && !authenticatedSession) {
+    if (req.method === "GET" && ["/", "/index.html"].includes(url.pathname)) return googleAuth.begin(req, res, url);
+    if (url.pathname.startsWith("/api/")) return json(res, 401, { ok: false, error: "需要使用 Google 账号登录", code: "google_auth_required" });
+  }
   if (req.method === "GET" && url.pathname === "/api/reviews") {
-    return json(res, 200, { ok: true, reviews: await manager.list({ ownerId: browserSession.id }) });
+    return json(res, 200, { ok: true, reviews: await manager.list({ ownerId }) });
   }
   if (req.method === "POST" && url.pathname === "/api/reviews") {
     const body = await readJson(req, config.maxUploadBytes * 1.42 + 1024 * 1024);
@@ -91,26 +114,26 @@ async function route(req, res) {
       researchTemplate: body.researchTemplate,
       sourceUrl: body.sourceUrl,
       ...(body.file ? { upload: normalizeUpload(body.file) } : {})
-    }, { ownerId: browserSession.id });
+    }, { ownerId });
     return json(res, 202, { ok: true, review });
   }
 
   const match = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)(?:\/(events|pdf|conversation-pdf|messages|retry|reanalyze|refresh|company-match))?$/);
   if (match) {
     const [, id, action] = match;
-    if (req.method === "GET" && action === "events") return streamReviewEvents(req, res, id, browserSession.id);
-    if (req.method === "GET" && action === "pdf") return downloadPdf(res, id, browserSession.id);
-    if (req.method === "GET" && action === "conversation-pdf") return downloadConversationPdf(res, id, browserSession.id);
-    if (req.method === "POST" && action === "messages") return streamAnswer(req, res, id, browserSession.id);
-    if (req.method === "POST" && action === "company-match") return matchAndRouteBp(req, res, id, browserSession.id);
-    if (req.method === "POST" && action === "retry") return json(res, 202, { ok: true, review: await manager.retry(id, { ownerId: browserSession.id }) });
+    if (req.method === "GET" && action === "events") return streamReviewEvents(req, res, id, ownerId);
+    if (req.method === "GET" && action === "pdf") return downloadPdf(res, id, ownerId);
+    if (req.method === "GET" && action === "conversation-pdf") return downloadConversationPdf(res, id, ownerId);
+    if (req.method === "POST" && action === "messages") return streamAnswer(req, res, id, ownerId);
+    if (req.method === "POST" && action === "company-match") return matchAndRouteBp(req, res, id, ownerId);
+    if (req.method === "POST" && action === "retry") return json(res, 202, { ok: true, review: await manager.retry(id, { ownerId }) });
     if (req.method === "POST" && action === "reanalyze") {
       const body = await readJson(req, 16 * 1024);
-      return json(res, 202, { ok: true, review: await manager.reanalyze(id, { ownerId: browserSession.id, outputLanguage: body.outputLanguage ? normalizeOutputLanguage(body.outputLanguage) : undefined }) });
+      return json(res, 202, { ok: true, review: await manager.reanalyze(id, { ownerId, outputLanguage: body.outputLanguage ? normalizeOutputLanguage(body.outputLanguage) : undefined }) });
     }
-    if (req.method === "POST" && action === "refresh") return json(res, 202, { ok: true, review: await manager.refreshEvidence(id, { ownerId: browserSession.id }) });
-    if (req.method === "DELETE" && !action) return json(res, 200, { ok: true, result: await manager.deleteConversation(id, { ownerId: browserSession.id }) });
-    if (req.method === "GET" && !action) return json(res, 200, { ok: true, review: await manager.get(id, { ownerId: browserSession.id }) });
+    if (req.method === "POST" && action === "refresh") return json(res, 202, { ok: true, review: await manager.refreshEvidence(id, { ownerId }) });
+    if (req.method === "DELETE" && !action) return json(res, 200, { ok: true, result: await manager.deleteConversation(id, { ownerId }) });
+    if (req.method === "GET" && !action) return json(res, 200, { ok: true, review: await manager.get(id, { ownerId }) });
   }
   if (req.method === "GET") return serveStatic(res, url.pathname);
   json(res, 404, { ok: false, error: "Not found" });
@@ -226,6 +249,11 @@ async function serveStatic(res, pathname) {
     if (error.code === "ENOENT") return json(res, 404, { ok: false, error: "Not found" });
     throw error;
   }
+}
+
+function redirect(res, location) {
+  res.writeHead(302, { Location: location || "/", "Cache-Control": "no-store" });
+  res.end();
 }
 
 async function readJson(req, maxBytes) {
