@@ -19,6 +19,7 @@ export function createReviewEventSourceController({
   let timer = null;
   let currentId = "";
   let polling = false;
+  let streamOpen = false;
 
   function connect(id) {
     close();
@@ -33,11 +34,18 @@ export function createReviewEventSourceController({
     bindJsonEvent(source, "refresh_stage", onRefreshStage);
     bindJsonEvent(source, "refresh_complete", onRefreshComplete);
     bindJsonEvent(source, "refresh_error", onRefreshError);
+    source.addEventListener("open", () => {
+      streamOpen = true;
+      if (timer) cancel(timer);
+      timer = null;
+    });
     source.addEventListener("error", (event) => {
       if (event.data) onTaskError(parseEventData(event.data));
-      else schedulePoll(0);
+      else {
+        streamOpen = false;
+        schedulePoll(0);
+      }
     });
-    schedulePoll(0);
   }
 
   async function pollNow() {
@@ -48,9 +56,9 @@ export function createReviewEventSourceController({
       const payload = await requestJson(`/api/reviews/${requestedId}`);
       if (requestedId !== currentId || !payload?.review) return;
       onSnapshot(payload.review);
-      if (shouldContinue(payload.review)) schedulePoll(pollIntervalMs);
+      if (!streamOpen && shouldContinue(payload.review)) schedulePoll(pollIntervalMs);
     } catch {
-      if (requestedId === currentId) schedulePoll(pollIntervalMs);
+      if (requestedId === currentId && !streamOpen) schedulePoll(pollIntervalMs);
     } finally {
       polling = false;
     }
@@ -66,6 +74,7 @@ export function createReviewEventSourceController({
 
   function close() {
     currentId = "";
+    streamOpen = false;
     source?.close?.();
     source = null;
     if (timer) cancel(timer);

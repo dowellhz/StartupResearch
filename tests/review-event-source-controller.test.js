@@ -23,6 +23,8 @@ test("review events fall back to a persisted snapshot when the stream is unavail
   });
   controller.connect("bp_1");
   assert.equal(sources[0].url, "/api/reviews/bp_1/events");
+  assert.equal(scheduled.length, 0, "healthy SSE must not poll in parallel");
+  sources[0].emitTransportError();
   assert.equal(scheduled[0].delay, 0);
   scheduled.shift().callback();
   await Promise.resolve();
@@ -65,6 +67,10 @@ class FakeEventSource {
 
   emit(type, value) {
     this.listeners.get(type)?.({ data: JSON.stringify(value) });
+  }
+
+  emitTransportError() {
+    this.listeners.get("error")?.({});
   }
 
   close() {

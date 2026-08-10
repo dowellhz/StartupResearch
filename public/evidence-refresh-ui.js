@@ -67,27 +67,105 @@ export function renderEvidenceRefresh(container, { refresh, result } = {}) {
     card = document.createElement("article");
     card.id = "evidenceRefreshMessage";
     card.className = "message assistant";
+    card.innerHTML = buildEvidenceRefreshMarkup({ refresh, result });
+    card.querySelector("[data-refresh-report]").sourceMarkdown = String(result?.report || "");
     container.append(card);
+    return card;
   }
-  card.innerHTML = buildEvidenceRefreshMarkup({ refresh, result });
-  container.append(card);
+  patchEvidenceRefreshCard(card, { refresh, result });
   return card;
 }
 
 export function buildEvidenceRefreshMarkup({ refresh, result } = {}) {
-  const active = isEvidenceRefreshActive(refresh);
-  const steps = Array.isArray(refresh?.steps) ? refresh.steps : [];
-  const statusLabel = active ? "LIVE" : result?.status === "needs_attention" || refresh?.status === "failed" ? "ATTENTION" : "DONE";
-  const progress = steps.length ? `
-    <div class="refresh-stage-list">
-      ${steps.map((stage) => { const copy = progressStageCopy(stage); return `<div class="refresh-stage ${escapeHtml(stage.status || "pending")}"><span></span><div><strong>${escapeHtml(copy.label)}</strong><p>${escapeHtml(copy.message)}</p></div></div>`; }).join("")}
-    </div>` : "";
-  const report = result?.report ? `<div class="report-content refresh-report">${markdownToHtml(result.report)}</div>` : "";
+  const view = evidenceRefreshView(refresh, result);
   return `
-    <div class="message-meta"><span class="avatar">VL</span>${t("refresh.label", { zh: "公开资料刷新" })}</div>
+    <div class="message-meta"><span class="avatar">VL</span><span data-refresh-label>${t("refresh.label", { zh: "公开资料刷新" })}</span></div>
     <div class="report-card evidence-refresh-card">
-      <div class="report-toolbar"><div><span>EVIDENCE REFRESH</span><strong>${active ? t("refresh.running", { zh: "正在刷新公开资料" }) : t("refresh.report", { zh: "公开资料变化报告" })}</strong></div><span class="refresh-status ${statusLabel.toLowerCase()}">${statusLabel}</span></div>
-      ${progress}
-      ${report || (!active ? `<div class="refresh-empty">${escapeHtml(refresh?.error || t("refresh.empty", { zh: "本次刷新尚未形成变化报告" }))}</div>` : "")}
+      <div class="report-toolbar"><div><span>EVIDENCE REFRESH</span><strong data-refresh-title>${view.title}</strong></div><span class="refresh-status ${view.statusLabel.toLowerCase()}" data-refresh-status>${view.statusLabel}</span></div>
+      <div class="refresh-stage-list${view.steps.length ? "" : " hidden"}" data-refresh-stages>${buildRefreshStagesMarkup(view.steps)}</div>
+      <div class="report-content refresh-report${view.report ? "" : " hidden"}" data-refresh-report>${view.report ? markdownToHtml(view.report) : ""}</div>
+      <div class="refresh-empty${view.showEmpty ? "" : " hidden"}" data-refresh-empty>${escapeHtml(view.emptyMessage)}</div>
     </div>`;
+}
+
+function patchEvidenceRefreshCard(card, { refresh, result }) {
+  const view = evidenceRefreshView(refresh, result);
+  patchText(card.querySelector("[data-refresh-label]"), t("refresh.label", { zh: "公开资料刷新" }));
+  patchText(card.querySelector("[data-refresh-title]"), view.title);
+  const status = card.querySelector("[data-refresh-status]");
+  patchText(status, view.statusLabel);
+  patchClass(status, `refresh-status ${view.statusLabel.toLowerCase()}`);
+  patchRefreshStages(card.querySelector("[data-refresh-stages]"), view.steps);
+
+  const report = card.querySelector("[data-refresh-report]");
+  report.classList.toggle("hidden", !view.report);
+  if (report.sourceMarkdown !== view.report) {
+    report.innerHTML = view.report ? markdownToHtml(view.report) : "";
+    report.sourceMarkdown = view.report;
+  }
+  const empty = card.querySelector("[data-refresh-empty]");
+  empty.classList.toggle("hidden", !view.showEmpty);
+  patchText(empty, view.emptyMessage);
+}
+
+function patchRefreshStages(list, steps) {
+  list.classList.toggle("hidden", !steps.length);
+  const existing = new Map(Array.from(list.children).map((node) => [node.dataset.refreshStageKey, node]));
+  const retained = new Set();
+  steps.forEach((stage, index) => {
+    const key = refreshStageKey(stage, index);
+    retained.add(key);
+    let node = existing.get(key);
+    if (!node) {
+      node = list.ownerDocument.createElement("div");
+      node.dataset.refreshStageKey = key;
+      node.innerHTML = "<span></span><div><strong></strong><p></p></div>";
+    }
+    const copy = progressStageCopy(stage);
+    patchClass(node, `refresh-stage ${refreshStageStatus(stage.status)}`);
+    patchText(node.querySelector("strong"), copy.label);
+    patchText(node.querySelector("p"), copy.message);
+    const current = list.children[index];
+    if (current !== node) list.insertBefore(node, current || null);
+  });
+  for (const [key, node] of existing) if (!retained.has(key)) node.remove();
+}
+
+function evidenceRefreshView(refresh, result) {
+  const active = isEvidenceRefreshActive(refresh);
+  const report = String(result?.report || "");
+  const statusLabel = active ? "LIVE" : result?.status === "needs_attention" || refresh?.status === "failed" ? "ATTENTION" : "DONE";
+  return {
+    active,
+    report,
+    statusLabel,
+    steps: Array.isArray(refresh?.steps) ? refresh.steps : [],
+    title: active ? t("refresh.running", { zh: "正在刷新公开资料" }) : t("refresh.report", { zh: "公开资料变化报告" }),
+    showEmpty: !active && !report,
+    emptyMessage: String(refresh?.error || t("refresh.empty", { zh: "本次刷新尚未形成变化报告" }))
+  };
+}
+
+function buildRefreshStagesMarkup(steps) {
+  return steps.map((stage, index) => {
+    const copy = progressStageCopy(stage);
+    return `<div class="refresh-stage ${refreshStageStatus(stage.status)}" data-refresh-stage-key="${escapeHtml(refreshStageKey(stage, index))}"><span></span><div><strong>${escapeHtml(copy.label)}</strong><p>${escapeHtml(copy.message)}</p></div></div>`;
+  }).join("");
+}
+
+function refreshStageKey(stage, index) {
+  return String(stage?.key || `refresh-stage-${index}`);
+}
+
+function refreshStageStatus(value) {
+  return ["pending", "running", "completed", "restored", "failed"].includes(value) ? value : "pending";
+}
+
+function patchText(node, value) {
+  const next = String(value || "");
+  if (node.textContent !== next) node.textContent = next;
+}
+
+function patchClass(node, value) {
+  if (node.className !== value) node.className = value;
 }
