@@ -1,14 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 
+export const DEEPSEEK_CREDENTIAL_FIELD = "DEEPSEEK_API_KEY";
+
 export function loadEnvFile(filePath = path.resolve(".env")) {
   if (!fs.existsSync(filePath)) return;
+  const seen = new Set();
   for (const rawLine of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
     const separator = line.indexOf("=");
     if (separator < 1) continue;
     const key = line.slice(0, separator).trim();
+    if (seen.has(key)) throw new Error(`Duplicate environment field in ${filePath}: ${key}`);
+    seen.add(key);
     let value = line.slice(separator + 1).trim();
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
@@ -19,13 +24,15 @@ export function loadEnvFile(filePath = path.resolve(".env")) {
 
 export function getRuntimeConfig(env = process.env) {
   const rootDir = path.resolve();
+  const deepSeekApiKey = String(env[DEEPSEEK_CREDENTIAL_FIELD] || "").trim();
   return {
     host: env.HOST || "127.0.0.1",
     port: positiveNumber(env.PORT, 1234),
     maxUploadBytes: positiveNumber(env.MAX_UPLOAD_MB, 20) * 1024 * 1024,
     dataDir: path.resolve(rootDir, "data"),
     model: {
-      apiKey: String(env.DEEPSEEK_API_KEY || "").trim(),
+      apiKey: deepSeekApiKey,
+      credentialSource: DEEPSEEK_CREDENTIAL_FIELD,
       baseUrl: normalizeChatUrl(env.DEEPSEEK_BASE_URL),
       model: String(env.DEEPSEEK_MODEL || "deepseek-chat").trim(),
       timeoutMs: positiveNumber(env.DEEPSEEK_TIMEOUT_MS, 120000)

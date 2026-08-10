@@ -1,16 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { anthropicMessagesUrl, getRuntimeConfig, normalizeChatUrl } from "../src/config/runtime-config.js";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { anthropicMessagesUrl, DEEPSEEK_CREDENTIAL_FIELD, getRuntimeConfig, loadEnvFile, normalizeChatUrl } from "../src/config/runtime-config.js";
 
 test("runtime config normalizes DeepSeek endpoints without exposing defaults as secrets", () => {
   const config = getRuntimeConfig({ DEEPSEEK_BASE_URL: "https://api.deepseek.com", MAX_UPLOAD_MB: "8" });
   assert.equal(config.model.baseUrl, "https://api.deepseek.com/chat/completions");
   assert.equal(config.model.apiKey, "");
+  assert.equal(config.model.credentialSource, DEEPSEEK_CREDENTIAL_FIELD);
   assert.equal(config.researchTools.openAlexApiKey, "");
   assert.equal(config.maxUploadBytes, 8 * 1024 * 1024);
   assert.equal(config.documents.pdfTimeoutMs, 120000);
   assert.equal(config.documents.pdfConcurrency, 1);
   assert.equal(config.recovery.staleAfterMs, 15 * 60 * 1000);
+});
+
+test("runtime config has one canonical DeepSeek credential field", () => {
+  const config = getRuntimeConfig({ DEEPSEEK_API_KEY: "shared-key" });
+  assert.equal(DEEPSEEK_CREDENTIAL_FIELD, "DEEPSEEK_API_KEY");
+  assert.equal(config.model.apiKey, "shared-key");
+  assert.equal(config.model.credentialSource, "DEEPSEEK_API_KEY");
+});
+
+test("env loader rejects duplicate credential definitions", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "venture-lens-env-"));
+  const envFile = path.join(directory, ".env");
+  await writeFile(envFile, "DEEPSEEK_API_KEY=first\nDEEPSEEK_API_KEY=second\n");
+  assert.throws(() => loadEnvFile(envFile), /Duplicate environment field.*DEEPSEEK_API_KEY/);
 });
 
 test("runtime config reads bounded PDF extraction and recovery budgets", () => {

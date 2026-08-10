@@ -6,6 +6,7 @@ import { expandLinkedPageSearch } from "./linked-page-search-orchestrator.js";
 
 export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetch, researchTools = null, linkedPageResearch = null } = {}) {
   if (!config) throw new Error("DeepSeek config is required");
+  const apiKey = String(config.apiKey || "").trim();
 
   async function complete(messages, options = {}) {
     assertConfigured();
@@ -25,7 +26,7 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
     const response = await fetchWithRetry(config.baseUrl, {
       method: "POST",
       signal,
-      headers: requestHeaders(config.apiKey),
+      headers: requestHeaders(apiKey),
       body: JSON.stringify({
         model: config.model,
         temperature: 0.1,
@@ -216,7 +217,7 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
       signal,
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": config.apiKey,
+        "x-api-key": apiKey,
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
@@ -261,7 +262,7 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
     const response = await fetchWithRetry(url, {
       method: "POST",
       signal,
-      headers: requestHeaders(config.apiKey),
+      headers: requestHeaders(apiKey),
       body: JSON.stringify(body)
     });
     if (!response.ok) throw new Error(await responseError(response, "DeepSeek"));
@@ -276,7 +277,7 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
   }
 
   function assertConfigured() {
-    if (!config.apiKey) throw new Error("DeepSeek API Key 未配置，请检查 .env");
+    if (!apiKey) throw new Error("DeepSeek API Key 未配置，请检查 .env");
     if (!fetchImpl) throw new Error("当前运行环境不支持 fetch");
   }
 

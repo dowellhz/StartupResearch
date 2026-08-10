@@ -24,6 +24,11 @@ for (const file of files) {
   text.split("\n").forEach((line, index) => {
     if (/[ \t]+$/.test(line)) errors.push(`${file}:${index + 1}: trailing whitespace`);
   });
+  if (file.startsWith(`src${path.sep}`)
+      && file !== path.join("src", "config", "runtime-config.js")
+      && (/process\.env/.test(text) || /env(?:\.|\[)["']?DEEPSEEK_API_KEY/.test(text))) {
+    errors.push(`${file}: runtime credentials must be read only by src/config/runtime-config.js`);
+  }
 }
 if (errors.length) {
   process.stderr.write(`${errors.join("\n")}\n`);

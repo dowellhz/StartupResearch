@@ -13,6 +13,27 @@ import {
 } from "../src/infra/deepseek-model-service.js";
 import { buildSecWebFallbackQueries } from "../src/domain/research-tool-fallback.js";
 
+test("chat and WebSearch use the same injected DeepSeek credential", async () => {
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    requests.push({ url, headers: options.headers });
+    if (String(url).includes("/anthropic/")) {
+      return new Response(JSON.stringify({ content: [{ type: "text", text: "[]" }] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 });
+  };
+  const model = createDeepSeekModelService({
+    config: { apiKey: "one-shared-key", baseUrl: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", timeoutMs: 1000 },
+    fetchImpl
+  });
+
+  await model.complete([{ role: "user", content: "hello" }]);
+  await model.webSearch({ companyName: "Example", queries: ["Example"], requestedTools: ["general_web_search"] });
+
+  assert.equal(requests[0].headers.Authorization, "Bearer one-shared-key");
+  assert.equal(requests[1].headers["x-api-key"], "one-shared-key");
+});
+
 test("clinical trial research adds a ClinicalTrials.gov Agentic Search query", () => {
   const queries = buildAgenticSearchQueries({
     companyName: "Example Bio",

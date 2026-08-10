@@ -67,6 +67,7 @@ async function route(req, res) {
       ok: true,
       model: config.model.model,
       modelConfigured: Boolean(config.model.apiKey),
+      modelCredentialSource: config.model.credentialSource,
       webResearchEnabled: config.webResearchEnabled,
       zeroKeyResearchTools: researchTools.zeroKeyNames(),
       keyedResearchTools: researchTools.keyedStatus()

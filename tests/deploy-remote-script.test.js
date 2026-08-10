@@ -16,6 +16,8 @@ test("remote deploy protects runtime state and credentials", () => {
   }
   assert.match(script, /MAX_REMOTE_DELETIONS/);
   assert.match(script, /startup-research-backups/);
+  assert.match(script, /exactly one DEEPSEEK_API_KEY field/);
+  assert.match(script, /EnvironmentFile=\$REMOTE_DIR\/\.env/);
 });
 
 test("remote deploy verifies service, public health, OpenAlex and commit identity", () => {

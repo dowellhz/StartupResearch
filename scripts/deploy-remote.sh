@@ -55,6 +55,9 @@ remote() {
 
 log "Checking remote target"
 remote "test -d '$REMOTE_DIR' && test -f '$REMOTE_DIR/.env' && systemctl cat '$SERVICE_NAME' >/dev/null"
+DEEPSEEK_KEY_FIELDS="$(remote "grep -c '^DEEPSEEK_API_KEY=' '$REMOTE_DIR/.env'")"
+[ "$DEEPSEEK_KEY_FIELDS" = "1" ] || fail "remote .env must contain exactly one DEEPSEEK_API_KEY field"
+remote "systemctl cat '$SERVICE_NAME' | grep -Fq 'EnvironmentFile=$REMOTE_DIR/.env'" || fail "service must load credentials from $REMOTE_DIR/.env"
 BACKUP_DIR="/home/nlvcadmin/startup-research-backups/$DEPLOY_COMMIT-$(date -u '+%Y%m%dT%H%M%SZ')"
 remote "mkdir -p '$BACKUP_DIR' && tar -C '$REMOTE_DIR' --exclude=.env --exclude=data --exclude=node_modules --exclude=output --exclude=tmp -czf '$BACKUP_DIR/app.tgz' ."
 
