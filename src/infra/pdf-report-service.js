@@ -237,14 +237,14 @@ function renderHeader(doc, title, generatedAt) {
 function renderLine(doc, raw) {
   const line = String(raw || "").trimEnd();
   if (!line) return void doc.moveDown(0.45);
-  const heading = line.match(/^(#{1,3})\s+(.+)$/);
+  const heading = line.match(/^(#{1,6})\s+(.+)$/);
   if (heading) {
     const level = heading[1].length;
     ensureSpace(doc, level === 1 ? 80 : 52);
     setPdfFont(doc, { role: "sans", bold: true });
     doc.moveDown(level === 1 ? 0.8 : 0.55)
       .fillColor(level === 1 ? "#9a432d" : "#1f2937")
-      .fontSize(level === 1 ? 19 : level === 2 ? 14 : 11.5)
+      .fontSize(level === 1 ? 19 : level === 2 ? 14 : level === 3 ? 11.5 : 10.5)
       .text(cleanMarkdown(heading[2]), { lineGap: 3 });
     return void doc.moveDown(0.35);
   }

@@ -20,7 +20,7 @@ export function markdownToHtml(markdown) {
     if (/^\|.*\|$/.test(line)) { closeList(); table.push(line); continue; }
     flushTable();
     if (!line) { closeList(); continue; }
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
     if (heading) { closeList(); output.push(`<h${heading[1].length}>${inlineMarkdown(heading[2])}</h${heading[1].length}>`); continue; }
     const bullet = line.match(/^[-*+]\s+(.+)$/);
     const ordered = line.match(/^\d+[.)]\s+(.+)$/);
