@@ -39,13 +39,13 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com/chat/completions
 DEEPSEEK_MODEL=deepseek-chat
 ```
 
-Google 登录使用 OAuth 2.0 / OpenID Connect，不需要 Google API Key，但需要在 Google Cloud Console 创建 Web OAuth 客户端。生产环境的授权重定向 URI 应配置为 `https://c.nlvcwiki.com/auth/google/callback`：
+Google 登录使用 OAuth 2.0 / OpenID Connect，不需要 Google API Key，但需要在 Google Cloud Console 创建 Web OAuth 客户端。生产域名仅保存在服务器环境配置中；Google Cloud 中的授权重定向 URI 应与 `GOOGLE_REDIRECT_URI` 完全一致：
 
 ```dotenv
 GOOGLE_AUTH_REQUIRED=false
 GOOGLE_CLIENT_ID=...apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=https://c.nlvcwiki.com/auth/google/callback
+GOOGLE_REDIRECT_URI=https://research.example.com/auth/google/callback
 AUTH_SESSION_SECRET=至少32字符的随机字符串
 ```
 
