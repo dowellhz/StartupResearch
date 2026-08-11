@@ -1,71 +1,216 @@
-# VentureLens BP 核查
+# VentureLens
 
-一个本地运行的 BP 核查工作台：上传商业计划书，实时查看解析、关键声明抽取、公开资料检索、交叉核查、报告生成和质量检查进度；最终报告直接出现在对话窗口，并可下载 PDF 或继续追问。
+VentureLens 是一个面向投资研究的 AI 工作台。它不只总结商业计划书，而是把材料中的关键陈述拆成可核查声明，结合公开网页、论文和结构化数据库进行交叉验证，最终生成带证据、风险标记和投资判断的研究报告。
 
-核查流水线会把 BP 拆成带页码依据的原子声明，为高优先级声明建立逐项研究计划，并将公开支持、冲突、候选证据和仅 BP 自述沉淀为声明账本。结构化提取同时整理财务、客户、市场和融资指标，复算增长率、收入关系、runway、资金用途及市场规模等可验证关系；无法复算的项目会明确标记为资料不足，不会被写成数字错误。
+当前版本：`0.3.0` · [查看 Releases](https://github.com/dowellhz/StartupResearch/releases)
 
-每条 BP 声明会保存结构化页码和逐字原文，并由确定性核验器回查解析后的页面；页码写错但原文存在时自动纠正，找不到原文时标记为未核验。高优先级声明缺少可复核原文不会阻止报告保存，但任务会进入“需关注”。网页正文只有经过系统实际抓取并保存内容指纹后才标记为已核验，普通搜索摘要仅作为候选证据。
+## 适合做什么
 
-公开检索会按工商主体、团队身份、客户与商业验证、市场基准、竞争、知识产权及监管等核验包优先查询官方来源。在统一预算内，后置投资分析阶段会生成自下而上的市场测算、竞品矩阵、投资正反论点、否决条件和关键里程碑。为同一对话上传新版 BP 时，系统还会比较两版结构化事实；普通重跑不会产生伪版本差异。
+| 任务 | 输入 | 主要产出 |
+| --- | --- | --- |
+| BP 核查 | PDF、PPTX、DOCX、TXT、Markdown | 声明账本、公开证据、冲突与风险、投资分析 |
+| 公司预研 | 公司名称与关注方向 | 公司公开信息、团队、产品、融资、客户与竞争研究 |
+| 行业研究 | 行业或技术主题 | 行业格局、技术路线、商业前景、投资主题与风险 |
+| 论文解读 | 论文 PDF 或公开 URL | 技术贡献、可信度、复现线索、产业价值与相关研究 |
 
-除模型自带的通用网页搜索外，系统会按 BP 领域自动调用一组无需 API Key、无需付费账户的结构化研究工具：ClinicalTrials.gov 临床试验、arXiv 预印本、Crossref 论文 DOI、GitHub 公开仓库、Hugging Face 公开模型、OSV/NVD 漏洞、SEC EDGAR 上市公司披露，以及 TED 欧盟采购公告。工具调用有查询数、结果数、超时和重试预算；单一接口限流或不可用时会显示降级提示，并继续保留其他接口已经取得的证据。`GET /api/health` 的 `zeroKeyResearchTools` 会列出当前启用的工具。
+所有任务都在同一个对话界面中运行，支持实时阶段进度、报告内继续追问、公开资料刷新，以及报告或完整对话 PDF 下载。界面支持中英文切换，报告语言跟随任务提交时的界面语言。
 
-通用网页搜索取得一级来源后，会对最多 6 个高价值页面执行一次受控链接发现，并下钻最多 10 个与公司、团队、技术、客户、融资或公告相关的 HTML/PDF 页面。抓取深度固定为 1，限制单域页面数、响应大小、并发和超时；私网地址会在请求前拦截，403 等受限页面会转为聚焦搜索线索而不会反复直抓。
+## 核心能力
 
-“零 Key”只指这些公开数据接口，不代表整套应用无需模型 Key：BP 抽取、语义判断、报告生成和通用网页搜索仍使用 DeepSeek。GitHub、NVD、SEC 等匿名接口的额度和可达性通常低于认证访问；其中 SEC 可能按出口网络策略拒绝请求，此时会自动降级，不会阻断报告生成。
+### 可追溯的 BP 核查
 
-配置 `OPENALEX_API_KEY` 后，学术型 BP 会额外调用 OpenAlex 学术图谱，交叉核验论文作者、研究机构、成果归属和引用信号。未配置时系统会明确跳过该工具，并继续使用 Crossref 和其他公开来源；健康接口仅返回是否配置，不返回凭证内容。
+- 从 BP 中提取团队、客户、收入、融资、市场、知识产权和监管等原子声明。
+- 保存声明所在页码与逐字原文，并用确定性核验器回查解析页面。
+- 页码错误但原文存在时自动纠正；无法回查时标记为未核验，而不是伪造引用。
+- 区分公开来源支持、公开来源冲突、候选证据、仅 BP 自述、资料不足和分析推断。
+- 结构化整理财务和经营指标，复算增长率、收入关系、runway、资金用途及市场规模等关系。
 
-报告完成后可手动“刷新公开资料”。每次刷新最多使用 8 个查询，只增量更新证据库和声明状态，并生成独立的公开资料变化报告；原 BP 报告不会被覆盖。系统明确区分真实事实变化、本次新找到的旧证据、证据冲突和无法判断，本次搜索未返回某来源不会被解释为事实消失。
+### 受预算约束的 Agentic Search
 
-系统支持匿名浏览器隔离和 Google 登录两种身份方式。未配置 Google OAuth 时保持原有匿名模式；配置凭证且 `GOOGLE_AUTH_REQUIRED=false` 时，用户可以选择登录 Google 账号，也可以继续匿名使用；设为 `true` 时，除健康检查和登录回调外，必须登录后才能使用。匿名用户首次访问时由服务端签发长期有效的浏览器 Cookie；登录后会把当前浏览器中的既有任务迁移到 Google 账号，从而可以跨浏览器访问。
+- 按工商主体、团队身份、客户验证、市场、竞争、知识产权和监管等核验包规划查询。
+- 通用搜索取得一级来源后，对高价值 HTML/PDF 页面执行一次受控链接发现。
+- 限制抓取深度、单域页面数、并发、响应大小、超时和重试次数。
+- 私网地址在请求前拦截；403 等受限页面会转化为聚焦搜索线索，不会无限重试。
+- 某个搜索工具不可用时保留其他已取得证据，并在报告中明确披露降级情况。
 
-## 启动
+### 投资分析与质量门
+
+- 生成市场测算、竞品矩阵、投资正反论点、否决条件和关键里程碑。
+- 高优先级声明缺少可复核原文或可靠公开证据时，任务进入“需关注”。
+- 质量门只决定状态，不阻止已有非空报告保存和显示。
+- 同一公司补充新版 BP 时保留当前对话并比较结构化事实；识别为新公司时创建独立对话。
+- “刷新公开资料”只生成增量变化报告，不覆盖原始 BP 核查报告。
+
+### 长任务与文档稳定性
+
+- 多阶段流程保存稳定任务 ID、checkpoint、阶段产物、失败原因和下一步骤。
+- 服务重启后恢复近期任务，停止超过预算的陈旧任务，避免无条件重跑已完成阶段。
+- PDF 解析运行在隔离子进程中，具有并发、超时和内存故障边界。
+- 对扫描、低文本密度或视觉内容较多的 PDF 进行受预算约束的中英文 OCR。
+- 即使最终质量不足或后置阶段失败，也保留最佳草稿、warning 和重试入口。
+
+## 研究工具
+
+VentureLens 会根据任务领域自动选择研究工具。
+
+无需 API Key 的公开接口：
+
+- ClinicalTrials.gov：临床试验
+- arXiv：预印本与论文元数据
+- Crossref：DOI、作者与引用元数据
+- GitHub：公开代码仓库与技术足迹
+- Hugging Face：公开模型和数据集
+- OSV / NVD：软件漏洞
+- SEC EDGAR：美国上市公司披露
+- TED：欧盟采购公告
+
+配置 `OPENALEX_API_KEY` 后，还会启用 OpenAlex 学术图谱，用于核查作者、机构、成果归属和引用信号。这里的“零 Key”只指上述公开数据接口；语义抽取、判断、报告生成和通用网页搜索仍需要 DeepSeek 凭证。
+
+运行中的工具状态可通过 `GET /api/health` 查看。健康接口只返回是否配置，不返回任何凭证内容。
+
+## 工作流程
+
+```text
+输入材料或研究主题
+        ↓
+文档解析与公司识别
+        ↓
+结构化声明 / 研究问题
+        ↓
+网页搜索 + 专项工具 + 二级页面抓取
+        ↓
+证据核验与商业指标复算
+        ↓
+投资分析、报告生成与质量门
+        ↓
+保存报告、PDF、checkpoint 和可继续追问的对话
+```
+
+## 快速开始
+
+要求：Node.js `20.16+` 或 `22.3+`。
 
 ```bash
+git clone https://github.com/dowellhz/StartupResearch.git
+cd StartupResearch
+cp .env.example .env
 npm install
 npm start
 ```
 
 浏览器打开 `http://127.0.0.1:1234`。
 
-生产部署仅允许干净且与 `origin/main` 完全一致的提交：`npm run deploy:remote`。脚本会保留远端 `.env`、任务数据和报告，部署前创建代码备份，并在重启后核对内网与公网健康接口。
-
-模型配置放在 `.env`：
+最小模型配置：
 
 ```dotenv
-DEEPSEEK_API_KEY=...
+DEEPSEEK_API_KEY=your-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com/chat/completions
 DEEPSEEK_MODEL=deepseek-chat
 ```
 
-Google 登录使用 OAuth 2.0 / OpenID Connect，不需要 Google API Key，但需要在 Google Cloud Console 创建 Web OAuth 客户端。生产域名仅保存在服务器环境配置中；Google Cloud 中的授权重定向 URI 应与 `GOOGLE_REDIRECT_URI` 完全一致：
+## 配置
+
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `HOST` | `127.0.0.1` | 服务监听地址 |
+| `PORT` | `1234` | 服务端口 |
+| `MAX_UPLOAD_MB` | `20` | 单个上传文件大小上限 |
+| `DEEPSEEK_API_KEY` | 空 | DeepSeek 唯一凭证字段 |
+| `DEEPSEEK_BASE_URL` | DeepSeek Chat Completions | 模型接口地址 |
+| `DEEPSEEK_MODEL` | `deepseek-chat` | 模型名称 |
+| `DEEPSEEK_TIMEOUT_MS` | `120000` | 单次模型请求超时 |
+| `WEB_RESEARCH_ENABLED` | `true` | 是否启用联网研究 |
+| `OPENALEX_API_KEY` | 空 | 可选 OpenAlex 学术检索凭证 |
+| `PDF_EXTRACTION_TIMEOUT_MS` | `120000` | PDF 子进程解析预算 |
+| `PDF_EXTRACTION_CONCURRENCY` | `1` | PDF 并发解析数 |
+| `ACTIVE_TASK_STALE_MINUTES` | `15` | 启动恢复时的陈旧任务阈值 |
+| `PUBLIC_BASE_URL` | 空 | 部署脚本使用的公网根地址 |
+
+所有运行时环境变量统一由 `src/config/runtime-config.js` 读取。不要把真实 `.env`、模型 Key 或 OAuth 凭证提交到 Git。
+
+## Google 登录
+
+Google 登录使用 OAuth 2.0 / OpenID Connect，不需要 Google API Key，但需要创建 Web OAuth 客户端。
 
 ```dotenv
 GOOGLE_AUTH_REQUIRED=false
-GOOGLE_CLIENT_ID=...apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=...
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
 GOOGLE_REDIRECT_URI=https://research.example.com/auth/google/callback
 AUTH_SESSION_SECRET=至少32字符的随机字符串
 ```
 
-只有四项凭证全部配置后，页面才显示可选的 Google 登录入口。`GOOGLE_AUTH_REQUIRED` 默认为 `false`；如需开启强制登录，应先确认 OAuth 登录回调正常，再将其改为 `true`。
+行为规则：
 
-## 支持格式
+- 未配置完整 OAuth 凭证：只提供匿名浏览器隔离。
+- `GOOGLE_AUTH_REQUIRED=false`：用户可选择 Google 登录，也可以匿名使用。
+- `GOOGLE_AUTH_REQUIRED=true`：除健康检查和登录回调外，必须登录后使用。
+- 匿名用户登录后，当前浏览器中的历史任务迁移至 Google 账户。
 
-- PDF（需要文本层；扫描件会给出明确错误）
-- PowerPoint `.pptx`
-- Word `.docx`
-- `.txt` / `.md`
+生产域名及回调地址只应保存在服务器环境配置和 Google Cloud 控制台中，不应硬编码到仓库。
 
-单文件默认最大 20 MB。任务与 checkpoint 保存在 `data/jobs/`，报告保存在 `data/reports/`。
+## 数据与隐私
 
-## 核查边界
+本项目使用本地文件持久化：
 
-报告区分 BP 自述、公开来源支持、冲突、资料不足和分析推断。模型知识不能替代实时公开证据；联网检索失败时会降级生成并在报告中明确披露。
+```text
+data/jobs/                   任务与 checkpoint
+data/reports/                Markdown 报告
+data/uploads/YYYYMMDD/       原始上传文件
+data/pdfs/YYYYMMDD/          已生成 PDF
+data/deleted-conversations/  已归档对话
+```
 
-仅凭 BP 与公开搜索可以完成材料内部一致性、公开事实和经营假设合理性核查，但不能证明收入、回款、合同、现金、股权或客户关系真实。真实性核验仍需银行流水、合同、发票、财务底表、股权文件及独立访谈等底层材料。
+匿名模式通过服务端签发的长期 HttpOnly Cookie 隔离任务。清除 Cookie、使用无痕模式或更换浏览器会产生新的匿名身份；Google 登录模式则按账户隔离。用户上传内容、报告和任务数据不应进入公开仓库。
 
-## 许可证
+## 项目结构
 
-本项目采用 [Apache License 2.0](LICENSE) 开源许可证。
+```text
+server.mjs          启动入口、依赖装配和 HTTP 路由
+src/config/         运行时配置唯一读取层
+src/domain/         研究流水线、状态机、质量门和领域服务
+src/infra/          文档解析、模型、检索、认证和 PDF 适配器
+src/storage/        任务、报告、上传文件与 PDF 持久化
+public/             浏览器端对话界面
+tests/              Node.js 单元测试
+ops/                systemd 与通用 Nginx 示例
+scripts/            工程检查和远程部署脚本
+```
+
+## 开发与检查
+
+```bash
+npm run dev          # watch 模式启动
+npm run check:syntax # JS/MJS 语法检查
+npm run lint         # 源码风格和冲突标记检查
+npm test             # 全部单元测试
+npm run check        # 完整本地检查
+```
+
+提交信息使用 Conventional Commits：`<type>(<scope>): <subject>`。
+
+## 部署
+
+仓库提供 `npm run deploy:remote`，用于项目维护者的受控服务器部署。脚本要求：
+
+- 当前分支是 `main`，工作树干净，且 `HEAD` 与 `origin/main` 完全一致。
+- 远端使用独立 `.env`，其中包含唯一的 `DEEPSEEK_API_KEY` 和 `PUBLIC_BASE_URL`。
+- 部署时保留 `.env`、`data/`、`node_modules/`、`output/` 和 `tmp/` 等运行时状态。
+- 同步前创建代码备份，限制远程删除数量，重启后检查内网、公网健康接口和部署提交号。
+
+Nginx 示例位于 `ops/startup-research.nginx.conf.example`。请在服务器侧替换示例域名和证书路径，不要把真实基础设施信息提交到仓库。
+
+## 能力边界
+
+VentureLens 可以核查材料内部一致性、公开事实、技术线索和商业假设合理性，但不能仅凭 BP 与公开搜索证明以下事项真实：
+
+- 收入、回款、现金余额和财务底表
+- 客户关系、合同履行和发票真实性
+- 股权结构、代持、质押和对赌安排
+- 核心代码、知识产权归属和生产系统状态
+
+正式尽调仍需银行流水、合同、发票、财务底表、股权文件、代码审计、现场检查及独立访谈。报告中的 AI 结论仅供投资研究参考。
+
+## License
+
+[Apache License 2.0](LICENSE)
