@@ -1,6 +1,6 @@
 {
   "name": "venture-lens-bp-review",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "DeepSeek-powered business plan review workspace",
   "license": "Apache-2.0",
