@@ -32,3 +32,14 @@ test("older reports receive useful default follow-up bubbles", () => {
   assert.match(container.innerHTML, /行业研究/);
   assert.match(container.innerHTML, /下一轮尽调/);
 });
+
+test("legacy object suggestions render useful fields and hide object artifacts", () => {
+  const container = {
+    classList: { toggle: () => {} },
+    innerHTML: "",
+    querySelectorAll: () => []
+  };
+  renderFollowupSuggestions(container, [{ question: "还需要哪些技术验证？" }, {}, "[object Object]"], () => {});
+  assert.match(container.innerHTML, /还需要哪些技术验证/);
+  assert.doesNotMatch(container.innerHTML, /object Object/);
+});

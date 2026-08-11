@@ -17,7 +17,7 @@ const ENGLISH_SUGGESTIONS = [
 export function renderFollowupSuggestions(container, suggestions, onSelect) {
   const provided = getLanguage() === LANGUAGE_EN ? ENGLISH_SUGGESTIONS : Array.isArray(suggestions) && suggestions.length ? suggestions : DEFAULT_SUGGESTIONS;
   const values = Array.from(new Set(provided
-    .map((value) => String(value || "").trim())
+    .map(suggestionText)
     .filter(Boolean))).slice(0, 4);
   container.classList.toggle("hidden", !values.length);
   if (!values.length) {
@@ -30,6 +30,21 @@ export function renderFollowupSuggestions(container, suggestions, onSelect) {
   container.querySelectorAll("[data-followup-suggestion]").forEach((button) => {
     button.addEventListener("click", () => onSelect(button.dataset.followupSuggestion));
   });
+}
+
+function suggestionText(value) {
+  if (typeof value === "string" || typeof value === "number") return clean(value);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  for (const field of ["question", "text", "description", "statement", "gap", "issue", "title", "nextStep"]) {
+    const text = clean(value[field]);
+    if (text) return text;
+  }
+  return "";
+}
+
+function clean(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text === "[object Object]" ? "" : text.slice(0, 600);
 }
 
 function suggestionButton(question) {

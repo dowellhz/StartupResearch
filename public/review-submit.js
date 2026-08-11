@@ -32,6 +32,14 @@ export function submitIndustryResearch({ requestJson, topic, instruction, resear
   });
 }
 
+export function submitTechnologyResearch({ requestJson, topic, instruction, outputLanguage }) {
+  return requestJson("/api/reviews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ taskType: "technology_research", companyName: topic, instruction, researchTemplate: "technical", outputLanguage })
+  });
+}
+
 export function submitPaperAnalysis({ requestJson, title, instruction, sourceUrl, outputLanguage, file, data }) {
   return requestJson("/api/reviews", {
     method: "POST",

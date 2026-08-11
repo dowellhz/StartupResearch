@@ -66,7 +66,7 @@ export function normalizeReviewReport(review, markdown = review?.report) {
   if (text && !/^#[ \t]+/m.test(text)) return text;
   if (review?.outputLanguage === "en") return text;
   const taskType = review?.taskType || "attachment_review";
-  if (["industry_research", "paper_analysis"].includes(taskType)) return text;
+  if (["industry_research", "technology_research", "paper_analysis"].includes(taskType)) return text;
   if (taskType === "company_pre_research") {
     return ensureLeadingSummary(text, {
       heading: COMPANY_SUMMARY_HEADING,

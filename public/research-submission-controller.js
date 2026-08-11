@@ -1,6 +1,6 @@
-import { fileToBase64, submitCompanyPreResearch, submitIndustryResearch, submitPaperAnalysis } from "./review-submit.js";
+import { fileToBase64, submitCompanyPreResearch, submitIndustryResearch, submitPaperAnalysis, submitTechnologyResearch } from "./review-submit.js";
 import { renderReviewRequest } from "./review-request-message.js";
-import { COMPANY_PRE_RESEARCH, INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./composer-task-mode.js";
+import { COMPANY_PRE_RESEARCH, INDUSTRY_RESEARCH, PAPER_ANALYSIS, TECHNOLOGY_RESEARCH } from "./composer-task-mode.js";
 import { getLanguage, t } from "./i18n.js";
 import { localizedReviewTitle } from "./task-type-labels.js";
 
@@ -43,6 +43,7 @@ export function createResearchSubmissionController(deps) {
     const outputLanguage = getLanguage();
     if (taskType === COMPANY_PRE_RESEARCH) return submitCompanyPreResearch({ requestJson, companyName: subject, instruction, outputLanguage });
     if (taskType === INDUSTRY_RESEARCH) return submitIndustryResearch({ requestJson, topic: subject, instruction, researchTemplate: elements.industryResearchTemplate.value, outputLanguage });
+    if (taskType === TECHNOLOGY_RESEARCH) return submitTechnologyResearch({ requestJson, topic: subject, instruction, outputLanguage });
     const data = state.file ? await fileToBase64(state.file) : "";
     return submitPaperAnalysis({ requestJson, title: subject, instruction, sourceUrl, outputLanguage, file: state.file, data });
   }
@@ -53,6 +54,7 @@ export function createResearchSubmissionController(deps) {
 export function validateInput({ taskType, subject, sourceUrl, file }) {
   if (taskType === COMPANY_PRE_RESEARCH && !subject) return t("validation.company", { zh: "公司预研需要填写公司名称" });
   if (taskType === INDUSTRY_RESEARCH && !subject) return t("validation.industry", { zh: "行业研究需要填写行业或技术主题" });
+  if (taskType === TECHNOLOGY_RESEARCH && !subject) return t("validation.technology", { zh: "技术调研需要填写技术主题" });
   if (taskType === PAPER_ANALYSIS && !file && !/^https?:\/\//i.test(sourceUrl)) return t("validation.paperSource", { zh: "论文解读需要上传 PDF 或填写论文 URL" });
   if (taskType === PAPER_ANALYSIS && file && !/\.pdf$/i.test(file.name || "") && !/application\/pdf/i.test(file.type || "")) return t("validation.paperPdf", { zh: "论文解读仅支持 PDF 文件" });
   return "";
@@ -62,6 +64,7 @@ function defaultInstruction(taskType) {
   return ({
     company_pre_research: t("instruction.company", { zh: "基于公开信息完成公司预研" }),
     industry_research: t("instruction.industry", { zh: "完成行业概览研究" }),
+    technology_research: t("instruction.technology", { zh: "完成技术调研" }),
     paper_analysis: t("instruction.paper", { zh: "从技术、可信度、行业价值和商业化角度解读论文" })
   })[taskType] || "完成研究";
 }

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildReviewResearchPlan, buildVerificationPacks, planReviewResearchTools } from "../src/domain/research-tool-planner.js";
+import { planStructuredResearchTools } from "../src/domain/research-tool-catalog.js";
 
 test("biotech academic teams automatically use clinical and scholar research tools", () => {
   const tools = planReviewResearchTools({
@@ -32,6 +33,14 @@ test("security, US filing and EU procurement claims select their zero-key regist
 
 test("ordinary commercial reviews retain general web search", () => {
   assert.deepEqual(planReviewResearchTools({ companyProfile: { sector: "消费零售" }, claims: [] }), ["general_web_search"]);
+});
+
+test("neurotechnology research selects paper graph and clinical registry tools", () => {
+  const tools = planStructuredResearchTools("fNIRS + EEG + temporal interference 技术调研，检索论文和研究团队");
+  assert.ok(tools.includes("clinical_trials_search"));
+  assert.ok(tools.includes("arxiv_paper_search"));
+  assert.ok(tools.includes("scholarly_works_search"));
+  assert.ok(tools.includes("openalex_research_search"));
 });
 
 test("research plan assigns queries to high-priority claims across domains", () => {

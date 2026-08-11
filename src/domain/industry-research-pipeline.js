@@ -3,6 +3,7 @@ import { redactSensitiveText } from "../../public/privacy-redaction.js";
 import { Result } from "./result.js";
 import { planStructuredResearchTools } from "./research-tool-catalog.js";
 import { normalizeEvidenceSources } from "./research-evidence-service.js";
+import { normalizeResearchQuestions } from "./research-question-service.js";
 import { completeStructuredJson } from "./structured-model-call.js";
 import {
   buildIndustryFallback,
@@ -15,10 +16,10 @@ import { assessIndustryResearchQuality, stabilizeIndustryResearchReport } from "
 
 export function createIndustryResearchPipeline({ model, repository, pdfReportService, webResearchEnabled = true, now = () => new Date().toISOString() }) {
   const steps = [
-    { key: "research-plan", label: "规划行业研究问题", run: planResearch },
-    { key: "public-research", label: "检索行业与学术资料", run: collectSources },
-    { key: "evidence-synthesis", label: "整理行业事实与分歧", run: synthesizeEvidence },
-    { key: "report-generation", label: "撰写行业研究报告", run: generateReport },
+    { key: "research-plan", label: "规划研究问题", run: planResearch },
+    { key: "public-research", label: "检索公开与学术资料", run: collectSources },
+    { key: "evidence-synthesis", label: "整理事实、证据与分歧", run: synthesizeEvidence },
+    { key: "report-generation", label: "撰写研究报告", run: generateReport },
     { key: "quality-gate", label: "检查结构、来源与引用", run: qualityGate },
     { key: "persist-report", label: "保存报告与版本", run: persistReport }
   ];
@@ -85,7 +86,7 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
       return { ...context, sources, researchWarning: sources.length ? "" : "检索完成，但未形成可引用来源" };
     } catch (error) {
       if (context.signal?.aborted) throw error;
-      return { ...context, sources: [], researchWarning: `行业资料检索降级：${error.message || error}` };
+      return { ...context, sources: [], researchWarning: `研究资料检索降级：${error.message || error}` };
     }
   }
 
@@ -103,7 +104,7 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
       });
     } catch (error) {
       if (context.signal?.aborted) throw error;
-      synthesisWarning = `行业证据整理降级：${error.message || error}`;
+      synthesisWarning = `研究证据整理降级：${error.message || error}`;
       synthesis = fallbackSynthesis(context.sources, synthesisWarning, context.job.outputLanguage);
     }
     return { ...context, synthesis, synthesisWarning };
@@ -140,7 +141,7 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
       }
       emit(context, "stage", stageFor("report-generation", "running", `报告输出异常，正在自动重试（${attempt}/2）…`));
     }
-    const generationWarning = context.job.outputLanguage === "en" ? `Industry research report generation failed: ${lastError}` : `行业研究报告输出异常：${lastError}`;
+    const generationWarning = context.job.outputLanguage === "en" ? `Research report generation failed: ${lastError}` : `研究报告输出异常：${lastError}`;
     const report = buildIndustryFallback({ topic: context.job.companyName, outputLanguage: context.job.outputLanguage, researchTemplate: context.job.researchTemplate, synthesis: context.synthesis, sources: context.sources, warning: generationWarning });
     emit(context, "report_delta", { delta: report });
     return { ...context, report, generationWarning };
@@ -156,7 +157,9 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
     await repository.saveReport(context.job.id, context.report);
     let pdfStoragePath = context.job.pdfStoragePath || "";
     if (pdfReportService && repository.savePdf) {
-      const pdf = await pdfReportService.render({ title: `${context.job.companyName} ${context.job.outputLanguage === "en" ? "Industry Research Report" : "行业研究报告"}`, markdown: context.report });
+      const technology = context.job.taskType === "technology_research";
+      const suffix = context.job.outputLanguage === "en" ? (technology ? "Technology Research Report" : "Industry Research Report") : (technology ? "技术调研报告" : "行业研究报告");
+      const pdf = await pdfReportService.render({ title: `${context.job.companyName} ${suffix}`, markdown: context.report });
       pdfStoragePath = await repository.savePdf(context.job.id, pdf, { date: context.job.createdAt || now() });
     }
     const finalJob = { ...context.job, status: context.quality.ok ? "completed" : "needs_attention", reportAvailable: true, pdfStoragePath, quality: context.quality, sources: context.sources, analysis: context.synthesis, researchPlan: context.plan, researchWarning: context.researchWarning || "", generationWarning: context.generationWarning || "", extractionWarning: context.synthesisWarning || "", followupSuggestions: buildSuggestions(context), reanalysisInProgress: false, error: "", failedStep: "", completedAt: now() };
@@ -172,12 +175,15 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
   return { execute, steps: steps.map(({ key, label }) => ({ key, label })) };
 }
 
-export function createIndustryResearchJob({ topic, instruction, outputLanguage = "zh", researchTemplate, steps, now = () => new Date().toISOString() }) {
+export function createIndustryResearchJob({ taskType = "industry_research", topic, instruction, outputLanguage = "zh", researchTemplate, steps, now = () => new Date().toISOString() }) {
   const createdAt = now();
   const name = String(topic || "").trim();
   const normalizedLanguage = String(outputLanguage).toLowerCase().startsWith("en") ? "en" : "zh";
-  const selected = resolveIndustryResearchTemplate(researchTemplate, normalizedLanguage);
-  return { id: `industry_${randomUUID().replace(/-/g, "").slice(0, 20)}`, taskType: "industry_research", companyName: name, title: `${name} · ${selected.label}`, instruction: String(instruction || (normalizedLanguage === "en" ? `Complete a ${selected.label.toLowerCase()} report` : `完成${selected.label}`)).trim(), outputLanguage: normalizedLanguage, researchTemplate: ["industry_overview", "technical", "commercial", "investment"].includes(researchTemplate) ? researchTemplate : "industry_overview", upload: null, status: "queued", stages: steps.map((step) => ({ ...step, status: "pending" })), checkpoints: {}, messages: [], createdAt, updatedAt: createdAt };
+  const normalizedTaskType = taskType === "technology_research" ? "technology_research" : "industry_research";
+  const normalizedTemplate = normalizedTaskType === "technology_research" ? "technical" : (["industry_overview", "technical", "commercial", "investment"].includes(researchTemplate) ? researchTemplate : "industry_overview");
+  const selected = resolveIndustryResearchTemplate(normalizedTemplate, normalizedLanguage);
+  const prefix = normalizedTaskType === "technology_research" ? "technology" : "industry";
+  return { id: `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 20)}`, taskType: normalizedTaskType, companyName: name, title: `${name} · ${selected.label}`, instruction: String(instruction || (normalizedLanguage === "en" ? `Complete a ${selected.label.toLowerCase()} report` : `完成${selected.label}`)).trim(), outputLanguage: normalizedLanguage, researchTemplate: normalizedTemplate, upload: null, status: "queued", stages: steps.map((step) => ({ ...step, status: "pending" })), checkpoints: {}, messages: [], createdAt, updatedAt: createdAt };
 }
 
 function normalizePlan(value) {
@@ -195,7 +201,7 @@ function fallbackPlan(topic, instruction, selected, outputLanguage) {
 
 function normalizeSynthesis(value, sources) {
   const ids = new Set(sources.map((item) => item.id));
-  return { findings: array(value?.findings).slice(0, 50).map((item) => ({ ...item, sourceIds: array(item?.sourceIds).map(String).filter((id) => ids.has(id)) })), risks: array(value?.risks).slice(0, 30), unknowns: array(value?.unknowns).map(String).slice(0, 30) };
+  return { findings: array(value?.findings).slice(0, 50).map((item) => ({ ...item, sourceIds: array(item?.sourceIds).map(String).filter((id) => ids.has(id)) })), risks: array(value?.risks).slice(0, 30), unknowns: normalizeResearchQuestions(value?.unknowns) };
 }
 
 function fallbackSynthesis(sources, warning, outputLanguage) {
@@ -208,7 +214,9 @@ function checkpointArtifact(context, key) {
 }
 
 function buildSuggestions(context) {
-  return unique([...(context.synthesis.unknowns || []), "这个行业最值得投资的价值链环节是什么？", "列出报告中最需要继续核验的关键数字", "哪些变化会推翻当前行业判断？"]).slice(0, 4);
+  const unknowns = normalizeResearchQuestions(context.synthesis.unknowns);
+  if (context.job.taskType === "technology_research") return unique([...unknowns, "比较主要技术路线的原理、性能与工程代价", "列出最关键的论文、原型系统和可复现资源", "给出未来 6-12 个月的验证实验路线"]).slice(0, 4);
+  return unique([...unknowns, "这个行业最值得投资的价值链环节是什么？", "列出报告中最需要继续核验的关键数字", "哪些变化会推翻当前行业判断？"]).slice(0, 4);
 }
 
 function emit(context, type, data) {
@@ -217,14 +225,14 @@ function emit(context, type, data) {
 }
 
 function stageEvent(step, index, total, status, message) { return { key: step.key, label: step.label, index, total, status, message }; }
-function runningMessage(key) { return ({ "research-plan": "正在扩展研究问题、章节映射与检索组…", "public-research": "正在调用网页与学术工具检索资料…", "evidence-synthesis": "正在区分事实、来源观点、分歧和未知项…", "report-generation": "正在撰写带来源的行业研究报告…", "quality-gate": "正在检查章节、来源和引用边界…", "persist-report": "正在保存报告和 checkpoint…" })[key]; }
+function runningMessage(key) { return ({ "research-plan": "正在扩展研究问题、章节映射与检索组…", "public-research": "正在调用网页与学术工具检索资料…", "evidence-synthesis": "正在区分事实、来源观点、分歧和未知项…", "report-generation": "正在撰写带来源的研究报告…", "quality-gate": "正在检查章节、来源和引用边界…", "persist-report": "正在保存报告和 checkpoint…" })[key]; }
 function completedMessage(key, context) {
   if (key === "research-plan") return `已形成 ${context.plan.questions.length} 个问题、${context.plan.queryGroups.length} 组查询`;
   if (key === "public-research") return context.sources.length ? `已整理 ${context.sources.length} 个来源` : context.researchWarning;
-  if (key === "evidence-synthesis") return context.synthesisWarning || `已整理 ${context.synthesis.findings.length} 条行业事实`;
+  if (key === "evidence-synthesis") return context.synthesisWarning || `已整理 ${context.synthesis.findings.length} 条结构化事实`;
   if (key === "report-generation") return `报告已生成，共 ${context.report.length} 个字符`;
   if (key === "quality-gate") return `质量评分 ${context.quality.score}`;
-  return "行业研究报告已保存，可下载 PDF";
+  return "研究报告已保存，可下载 PDF";
 }
 function unique(values) { return Array.from(new Set(values.filter(Boolean))); }
 function array(value) { return Array.isArray(value) ? value : []; }

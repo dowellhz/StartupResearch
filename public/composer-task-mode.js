@@ -4,6 +4,7 @@ import { t } from "./i18n.js";
 export const ATTACHMENT_REVIEW = "attachment_review";
 export const COMPANY_PRE_RESEARCH = "company_pre_research";
 export const INDUSTRY_RESEARCH = "industry_research";
+export const TECHNOLOGY_RESEARCH = "technology_research";
 export const PAPER_ANALYSIS = "paper_analysis";
 
 export function createComposerTaskModeController({ elements, state, clearAttachment = () => {} }) {
@@ -26,6 +27,7 @@ export function createComposerTaskModeController({ elements, state, clearAttachm
     });
     elements.exitResearchMode.addEventListener("click", selectAttachmentMode);
     elements.exitIndustryResearchMode.addEventListener("click", selectAttachmentMode);
+    elements.exitTechnologyResearchMode?.addEventListener("click", selectAttachmentMode);
     elements.exitPaperAnalysisMode.addEventListener("click", selectAttachmentMode);
     document.addEventListener("click", (event) => {
       if (!elements.addMenu.contains(event.target) && !elements.attachButton.contains(event.target)) closeMenu();
@@ -86,9 +88,23 @@ export function createComposerTaskModeController({ elements, state, clearAttachm
     elements.composerNote.textContent = t("composer.paperNote", { zh: "论文解读模式：上传 PDF 或填写公开论文 URL，系统将补充学术检索" });
   }
 
+  function selectTechnologyResearchMode() {
+    clearAttachment();
+    state.taskType = TECHNOLOGY_RESEARCH;
+    hideSpecialPreviews();
+    renderEmptyStateMode(elements, TECHNOLOGY_RESEARCH);
+    setNewTaskTitle(t("top.newTechnology", { zh: "新建技术调研" }));
+    elements.technologyResearchPreview.classList.remove("hidden");
+    elements.companyInput.disabled = false;
+    elements.companyInput.placeholder = t("composer.technologyRequired", { zh: "技术主题或技术组合（必填）" });
+    elements.promptInput.placeholder = t("composer.technologyFocus", { zh: "补充应用场景、性能指标、时间范围或验证重点（可选）" });
+    elements.composerNote.textContent = t("composer.technologyNote", { zh: "技术调研模式：系统会调用网页、论文与专项数据库，分析原理、路线、成熟度和验证方案" });
+  }
+
   function hideSpecialPreviews() {
     elements.researchPreview.classList.add("hidden");
     elements.industryResearchPreview.classList.add("hidden");
+    elements.technologyResearchPreview?.classList.add("hidden");
     elements.paperAnalysisPreview.classList.add("hidden");
   }
 
@@ -107,7 +123,7 @@ export function createComposerTaskModeController({ elements, state, clearAttachm
     elements.attachButton.setAttribute("aria-expanded", "false");
   }
 
-  return { bind, closeMenu, selectAttachmentMode, selectCompanyResearchMode, selectIndustryResearchMode, selectPaperAnalysisMode };
+  return { bind, closeMenu, selectAttachmentMode, selectCompanyResearchMode, selectIndustryResearchMode, selectTechnologyResearchMode, selectPaperAnalysisMode };
 }
 
 export function taskTypeForFileInput(currentTaskType) {

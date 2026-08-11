@@ -11,6 +11,7 @@ VentureLens 是一个面向投资研究的 AI 工作台。它不只总结商业�
 | BP 核查 | PDF、PPTX、DOCX、TXT、Markdown | 声明账本、公开证据、冲突与风险、投资分析 |
 | 公司预研 | 公司名称与关注方向 | 公司公开信息、团队、产品、融资、客户与竞争研究 |
 | 行业研究 | 行业或技术主题 | 行业格局、技术路线、商业前景、投资主题与风险 |
+| 技术调研 | 技术主题或技术组合 | 核心原理、路线对比、论文与原型、成熟度、工程瓶颈和验证路线 |
 | 论文解读 | 论文 PDF 或公开 URL | 技术贡献、可信度、复现线索、产业价值与相关研究 |
 
 所有任务都在同一个对话界面中运行，支持实时阶段进度、报告内继续追问、公开资料刷新，以及报告或完整对话 PDF 下载。界面支持中英文切换，报告语言跟随任务提交时的界面语言。
@@ -67,6 +68,22 @@ VentureLens 会根据任务领域自动选择研究工具。
 配置 `OPENALEX_API_KEY` 后，还会启用 OpenAlex 学术图谱，用于核查作者、机构、成果归属和引用信号。这里的“零 Key”只指上述公开数据接口；语义抽取、判断、报告生成和通用网页搜索仍需要 DeepSeek 凭证。
 
 运行中的工具状态可通过 `GET /api/health` 查看。健康接口只返回是否配置，不返回任何凭证内容。
+
+技术调研也可作为异步任务 Tool 调用。它使用独立任务类型，并强制选择技术调研模板：
+
+```http
+POST /api/reviews
+Content-Type: application/json
+
+{
+  "taskType": "technology_research",
+  "companyName": "fNIRS + EEG + Temporal Interference",
+  "instruction": "重点研究多模态闭环、刺激伪迹、成熟度和验证实验",
+  "outputLanguage": "zh"
+}
+```
+
+接口返回稳定任务 ID；调用方可通过 `/api/reviews/{id}/events` 接收阶段事件与报告流，并通过 `/api/reviews/{id}` 读取持久化结果。
 
 ## 工作流程
 

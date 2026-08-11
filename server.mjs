@@ -104,7 +104,7 @@ async function route(req, res) {
     const taskType = normalizeTaskType(body.taskType);
     if (taskType === "attachment_review") validateUploadBody(body);
     if (taskType === "company_pre_research") validateCompanyResearchBody(body);
-    if (taskType === "industry_research") validateIndustryResearchBody(body);
+    if (["industry_research", "technology_research"].includes(taskType)) validateTopicResearchBody(body, taskType);
     if (taskType === "paper_analysis") validatePaperAnalysisBody(body);
     const review = await manager.create({
       taskType,
@@ -279,8 +279,8 @@ function validateCompanyResearchBody(body) {
   if (!String(body.companyName || "").trim()) throw Object.assign(new Error("公司预研需要填写公司名称"), { statusCode: 400 });
 }
 
-function validateIndustryResearchBody(body) {
-  if (!String(body.companyName || "").trim()) throw Object.assign(new Error("行业研究需要填写行业或技术主题"), { statusCode: 400 });
+function validateTopicResearchBody(body, taskType) {
+  if (!String(body.companyName || "").trim()) throw Object.assign(new Error(taskType === "technology_research" ? "技术调研需要填写技术主题" : "行业研究需要填写行业或技术主题"), { statusCode: 400 });
 }
 
 function validatePaperAnalysisBody(body) {
@@ -293,7 +293,7 @@ function validatePaperAnalysisBody(body) {
 }
 
 function normalizeTaskType(value) {
-  return ["company_pre_research", "industry_research", "paper_analysis"].includes(value) ? value : "attachment_review";
+  return ["company_pre_research", "industry_research", "technology_research", "paper_analysis"].includes(value) ? value : "attachment_review";
 }
 
 function normalizeOutputLanguage(value) {
@@ -350,9 +350,9 @@ async function ensureStoredPdf(job) {
 
 function reportTitle(review) {
   if (review.outputLanguage === "en") {
-    const suffix = ({ company_pre_research: "Company Research Report", industry_research: "Industry Research Report", paper_analysis: "Paper Analysis" })[review.taskType] || "BP Review Report";
+    const suffix = ({ company_pre_research: "Company Research Report", industry_research: "Industry Research Report", technology_research: "Technology Research Report", paper_analysis: "Paper Analysis" })[review.taskType] || "BP Review Report";
     return `${review.companyName || "Untitled Subject"} ${suffix}`;
   }
-  const suffix = ({ company_pre_research: "公司预研报告", industry_research: "行业研究报告", paper_analysis: "论文解读" })[review.taskType] || "BP 核查报告";
+  const suffix = ({ company_pre_research: "公司预研报告", industry_research: "行业研究报告", technology_research: "技术调研报告", paper_analysis: "论文解读" })[review.taskType] || "BP 核查报告";
   return `${review.companyName || "未命名主题"} ${suffix}`;
 }

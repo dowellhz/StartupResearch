@@ -112,11 +112,11 @@ function renderConversationReport(doc, conversation) {
 }
 
 function conversationTaskLabel(taskType) {
-  return ({ company_pre_research: "公司预研", industry_research: "行业研究", paper_analysis: "论文解读" })[taskType] || "附件核查";
+  return ({ company_pre_research: "公司预研", industry_research: "行业研究", technology_research: "技术调研", paper_analysis: "论文解读" })[taskType] || "附件核查";
 }
 
 function conversationReportEyebrow(taskType) {
-  return ({ company_pre_research: "COMPANY RESEARCH REPORT", industry_research: "INDUSTRY RESEARCH REPORT", paper_analysis: "PAPER ANALYSIS REPORT" })[taskType] || "BP REVIEW REPORT";
+  return ({ company_pre_research: "COMPANY RESEARCH REPORT", industry_research: "INDUSTRY RESEARCH REPORT", technology_research: "TECHNOLOGY RESEARCH REPORT", paper_analysis: "PAPER ANALYSIS REPORT" })[taskType] || "BP REVIEW REPORT";
 }
 
 function renderEvidenceRefresh(doc, refresh) {

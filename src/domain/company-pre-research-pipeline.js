@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Result } from "./result.js";
 import { planStructuredResearchTools } from "./research-tool-catalog.js";
 import { normalizeEvidenceSources } from "./research-evidence-service.js";
+import { normalizeResearchQuestions } from "./research-question-service.js";
 import { completeStructuredJson } from "./structured-model-call.js";
 import {
   buildCompanyResearchExtractionMessages,
@@ -285,7 +286,7 @@ function validateAnalysis(value, sources = []) {
     id: String(finding?.id || `finding_${index + 1}`),
     sourceIds: array(finding?.sourceIds).map(String).filter((id) => !sourceIds.size || sourceIds.has(id))
   }));
-  return { ...value, findings, risks: array(value?.risks), missingInformation: array(value?.missingInformation), followupQuestions: array(value?.followupQuestions) };
+  return { ...value, findings, risks: array(value?.risks), missingInformation: array(value?.missingInformation), followupQuestions: normalizeResearchQuestions(value?.followupQuestions) };
 }
 
 function fallbackAnalysis(context, warning) {
@@ -308,7 +309,7 @@ function fallbackAnalysis(context, warning) {
 
 function buildSuggestions(analysis = {}) {
   return unique([
-    ...array(analysis.followupQuestions),
+    ...normalizeResearchQuestions(analysis.followupQuestions),
     "基于现有公开资料，最需要公司补证的三项是什么？",
     "把公开信息中的风险按投资否决优先级排序"
   ]).slice(0, 4);

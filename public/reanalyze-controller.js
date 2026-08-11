@@ -30,11 +30,13 @@ export function confirmationMessage(taskType) {
   if (getLanguage() === LANGUAGE_EN) return ({
     company_pre_research: "Research public information and regenerate the company report? The previous report will be archived.",
     industry_research: "Re-plan, search and regenerate the industry report? The previous report will be archived.",
+    technology_research: "Re-plan, search and regenerate the technology report? The previous report will be archived.",
     paper_analysis: "Re-parse the paper and refresh academic research? The previous report will be archived."
   })[taskType] || "Re-parse and review the saved BP? The previous report will be archived.";
   return ({
     company_pre_research: "将重新抓取公开信息并生成公司预研报告。旧报告会先归档，是否继续？",
     industry_research: "将重新规划、检索并生成行业研究报告。旧报告会先归档，是否继续？",
+    technology_research: "将重新规划、检索并生成技术调研报告。旧报告会先归档，是否继续？",
     paper_analysis: "将重新解析论文并补充学术检索。旧报告会先归档，是否继续？"
   })[taskType] || "将使用已保存的原始 BP 重新解析并核查。旧报告会先归档，是否继续？";
 }

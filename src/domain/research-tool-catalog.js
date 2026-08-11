@@ -1,4 +1,4 @@
-const CLINICAL_PATTERN = /生物医药|制药|药物|抗体|小分子|siRNA|核酸|临床|适应症|IND|PCC|肿瘤|医疗器械|\bNCT\d{8}\b/i;
+const CLINICAL_PATTERN = /生物医药|制药|药物|抗体|小分子|siRNA|核酸|临床|适应症|IND|PCC|肿瘤|医疗器械|神经调控|神经刺激|脑机|脑电|近红外|EEG|fNIRS|temporal interference|\bTI\b|\bNCT\d{8}\b/i;
 const SCHOLAR_PATTERN = /教授|博士|院士|高校|大学|研究院|论文|学术|学者|科研|课题|实验室|DOI|ORCID|Google\s*Scholar/i;
 const ARXIV_PATTERN = /arXiv|预印本|论文|学术|科研|教授|博士|学者|高校|大学|研究院|实验室|Google\s*Scholar|算法|模型|人工智能|\bAI\b|机器学习|深度学习|神经网络|计算机视觉|自然语言|核心技术|技术架构/i;
 const SOFTWARE_PATTERN = /软件|SaaS|开源|代码|算法|开发者|GitHub|仓库|机器人|人工智能|\bAI\b|大模型|模型|数据集/i;

@@ -25,9 +25,9 @@ export function assessIndustryResearchQuality(markdown, { outputLanguage, resear
   score += Math.min(25, sourceCount * 3);
   score += Math.min(15, factCount * 2);
   score += citationUrlsAreKnown(markdown, sources) ? 10 : 0;
-  if (present < required.length) findings.push(item("missing_sections", "fatal", "行业研究报告章节不完整"));
-  if (!sourceCount) findings.push(item("no_public_sources", "fatal", "行业研究未形成可引用来源"));
-  if (!factCount) findings.push(item("no_structured_findings", "warn", "公开来源未形成结构化行业事实"));
+  if (present < required.length) findings.push(item("missing_sections", "fatal", `${selected.label}报告章节不完整`));
+  if (!sourceCount) findings.push(item("no_public_sources", "fatal", `${selected.label}未形成可引用来源`));
+  if (!factCount) findings.push(item("no_structured_findings", "warn", "公开来源未形成结构化研究事实"));
   if (!citationUrlsAreKnown(markdown, sources)) findings.push(item("citation_provenance_invalid", "warn", "报告包含证据列表之外的链接"));
   for (const warning of warnings.filter(Boolean)) findings.push(item("pipeline_warning", "warn", warning));
   return {

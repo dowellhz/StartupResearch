@@ -25,6 +25,9 @@
         <button class="new-research-task" id="newIndustryResearchButton" type="button">
           <span>行</span><strong data-i18n="sidebar.industry">行业研究</strong><small data-i18n="sidebar.industrySub">公开资料与论文</small>
         </button>
+        <button class="new-research-task" id="newTechnologyResearchButton" type="button">
+          <span>技</span><strong data-i18n="sidebar.technology">技术调研</strong><small data-i18n="sidebar.technologySub">原理、路线与成熟度</small>
+        </button>
         <button class="new-research-task" id="newPaperAnalysisButton" type="button">
           <span>论</span><strong data-i18n="sidebar.paper">论文解读</strong><small data-i18n="sidebar.paperSub">PDF 或论文 URL</small>
         </button>
@@ -86,6 +89,11 @@
           <div><strong data-i18n="preview.industry">行业研究</strong><span data-i18n="preview.industrySub">公开资料、论文、技术与投资视角</span></div>
           <label><span data-i18n="preview.researchType">研究类型</span><select id="industryResearchTemplate"><option value="industry_overview" data-i18n="preview.overview">行业概览</option><option value="technical" data-i18n="preview.technical">技术研究</option><option value="commercial" data-i18n="preview.commercial">商业前景</option><option value="investment" data-i18n="preview.investment">投资价值</option></select></label>
           <button id="exitIndustryResearchMode" type="button" aria-label="退出行业研究">×</button>
+        </div>
+        <div class="research-preview industry-preview hidden" id="technologyResearchPreview">
+          <div class="research-icon">技</div>
+          <div><strong data-i18n="preview.technology">技术调研</strong><span data-i18n="preview.technologySub">论文、技术路线、成熟度与验证方案</span></div>
+          <button id="exitTechnologyResearchMode" type="button" aria-label="退出技术调研">×</button>
         </div>
         <div class="research-preview paper-preview hidden" id="paperAnalysisPreview">
           <div class="research-icon">论</div>
