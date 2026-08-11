@@ -167,6 +167,7 @@ function compactComparableCompanyResearch(value = {}) {
   return {
     invoked: true,
     scope: value.plan?.scope,
+    warning: String(value.warning || "").slice(0, 1000),
     dimensions: array(value.synthesis?.dimensions).slice(0, 8),
     domesticPeers: array(value.synthesis?.domesticPeers).slice(0, 10),
     internationalPeers: array(value.synthesis?.internationalPeers).slice(0, 10),
@@ -196,12 +197,13 @@ function comparableCompanyText(value, english = false) {
     `- **${label} · ${peer.name}**（${peer.relationship || "adjacent"}）：${peer.product || peer.differentiation || (english ? "Evidence requires further verification." : "详细对比仍需补证")}`);
   return [
     `- **${english ? "Comparable scope" : "可比口径"}**：${value.plan?.scope || (english ? "Not established" : "尚未稳定建立")}`,
+    value.warning ? `- **${english ? "Coverage warning" : "覆盖提示"}**：${value.warning}` : "",
     ...peerLines(english ? "Domestic" : "国内", synthesis.domesticPeers),
     ...peerLines(english ? "International" : "海外", synthesis.internationalPeers),
     ...peerLines(english ? "Alternative" : "替代方案", synthesis.alternatives),
     ...array(synthesis.subjectPositioning).slice(0, 6).map((item) => `- ${english ? "Positioning" : "相对定位"}：${item}`),
     ...array(synthesis.gaps).slice(0, 5).map((item) => `- ${english ? "Evidence gap" : "证据缺口"}：${item}`)
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function technologyText(value, english = false) {

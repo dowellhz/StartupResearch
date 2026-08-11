@@ -63,12 +63,13 @@ function comparableCompanyText(value, english = false) {
     `- **${label} · ${peer.name}**（${peer.relationship || "adjacent"}）：${peer.product || peer.differentiation || (english ? "Further evidence required" : "详细对比仍需补证")}`);
   return [
     `- **${english ? "Comparable scope" : "可比口径"}**：${value.plan?.scope || (english ? "Not established" : "尚未稳定建立")}`,
+    value.warning ? `- **${english ? "Coverage warning" : "覆盖提示"}**：${value.warning}` : "",
     ...peerLines(english ? "Domestic" : "国内", synthesis.domesticPeers),
     ...peerLines(english ? "International" : "海外", synthesis.internationalPeers),
     ...peerLines(english ? "Alternative" : "替代方案", synthesis.alternatives),
     ...array(synthesis.subjectPositioning).slice(0, 6).map((item) => `- ${english ? "Positioning" : "相对定位"}：${item}`),
     ...array(synthesis.gaps).slice(0, 5).map((item) => `- ${english ? "Evidence gap" : "证据缺口"}：${item}`)
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function marketSizingText(market = {}) {

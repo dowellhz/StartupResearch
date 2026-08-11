@@ -365,6 +365,10 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       quality.ok = false;
       quality.findings.push({ code: "investment_analysis_warning", severity: "warn", message: context.investmentAnalysisWarning });
     }
+    if (context.comparableCompanyResearchWarning) {
+      quality.ok = false;
+      quality.findings.push({ code: "comparable_company_research_warning", severity: "warn", message: context.comparableCompanyResearchWarning });
+    }
     return { ...context, report: stabilized, quality };
   }
 

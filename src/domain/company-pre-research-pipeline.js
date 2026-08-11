@@ -247,6 +247,10 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
       quality.ok = false;
       quality.findings.push({ code: "extraction_warning", severity: "warn", message: context.extractionWarning });
     }
+    if (context.comparableCompanyResearchWarning) {
+      quality.ok = false;
+      quality.findings.push({ code: "comparable_company_research_warning", severity: "warn", message: context.comparableCompanyResearchWarning });
+    }
     return { ...context, report, quality };
   }
 

@@ -222,6 +222,7 @@ function compactComparableCompanyResearch(value = {}) {
   return {
     invoked: true,
     scope: compactValue(value.plan?.scope, 500),
+    warning: compactValue(value.warning, 1000),
     dimensions: array(value.synthesis?.dimensions).slice(0, 8).map((item) => compactValue(item, 200)),
     domesticPeers: compactPeers(value.synthesis?.domesticPeers),
     internationalPeers: compactPeers(value.synthesis?.internationalPeers),

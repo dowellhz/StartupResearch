@@ -1,6 +1,6 @@
 import { summarizeInvestmentAnalysis } from "./investment-analysis-service.js";
 
-export const BP_PIPELINE_VERSION = 4;
+export const BP_PIPELINE_VERSION = 5;
 
 export function prepareJobForPipeline(job, steps) {
   const existingStages = new Map((Array.isArray(job?.stages) ? job.stages : []).map((stage) => [stage.key, stage]));
