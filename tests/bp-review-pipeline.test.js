@@ -25,6 +25,24 @@ test("legacy checkpoints invalidate downstream work when evidence verification i
   assert.equal(migrated.stages.find((step) => step.key === "evidence-verification").status, "pending");
 });
 
+test("legacy active reviews rerun downstream stages when technology research is introduced", () => {
+  const steps = ["public-research", "technology-research", "cross-check", "evidence-verification", "report-generation"]
+    .map((key) => ({ key, label: key }));
+  const migrated = prepareJobForPipeline({
+    checkpoints: {
+      "public-research": { completed: true },
+      "cross-check": { completed: true },
+      "evidence-verification": { completed: true },
+      "report-generation": { completed: true }
+    },
+    stages: steps.filter((step) => step.key !== "technology-research").map((step) => ({ ...step, status: "completed" }))
+  }, steps);
+  assert.equal(migrated.checkpoints["public-research"].completed, true);
+  assert.equal(migrated.checkpoints["cross-check"], undefined);
+  assert.equal(migrated.checkpoints["report-generation"], undefined);
+  assert.equal(migrated.stages.find((step) => step.key === "technology-research").status, "pending");
+});
+
 test("BP review pipeline checkpoints every stage and keeps a visible report", async () => {
   const saved = [];
   let report = "";
@@ -72,7 +90,12 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
       versionComparison: { available: false, changes: [] }
     }
   }) };
-  const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService });
+  let technologyCalled = false;
+  const technologyResearchTool = { research: async () => {
+    technologyCalled = true;
+    return { invoked: true, plan: { topic: "示例核心技术" }, synthesis: { findings: [], approaches: [], maturity: { stage: "validated_prototype" }, bottlenecks: [], validationPlan: [], unknowns: [] }, additionalSources: [{ title: "技术证据", url: "https://example.com/technology", snippet: "公开技术验证" }], warning: "" };
+  } };
+  const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService, technologyResearchTool });
   const job = createReviewJob({
     companyName: "示例科技",
     instruction: "全面核查",
@@ -90,6 +113,8 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
   assert.equal(result.value.job.evidenceManifest.claims[0].documentCitation.verificationStatus, "verified");
   assert.equal(result.value.job.researchPlan.claimPlans[0].claimId, "c1");
   assert.equal(result.value.job.investmentAnalysis.decision.stance, "conditional");
+  assert.equal(technologyCalled, true);
+  assert.equal(result.value.job.technologyResearch.invoked, true);
   assert.equal(result.value.job.quality.metrics.competitorCount, 1);
   assert.ok(result.value.job.sources[0].retrievedAt);
   assert.equal(Object.keys(result.value.job.checkpoints).length, pipeline.steps.length);

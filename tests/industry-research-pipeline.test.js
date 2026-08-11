@@ -40,11 +40,3 @@ test("industry research plans queries, uses public tools and checkpoints a repor
   assert.equal(searched.requestedTools.includes("arxiv_paper_search"), true);
   assert.match(storedReport, /## 代表论文、团队与原型/);
 });
-
-test("technology research is an explicit task tool and always uses the technical template", () => {
-  const job = createIndustryResearchJob({ taskType: "technology_research", topic: "fNIRS + EEG + TI", researchTemplate: "investment", steps: [] });
-  assert.equal(job.taskType, "technology_research");
-  assert.equal(job.researchTemplate, "technical");
-  assert.match(job.id, /^technology_/);
-  assert.match(job.title, /技术调研/);
-});

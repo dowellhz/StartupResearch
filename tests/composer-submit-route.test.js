@@ -7,8 +7,7 @@ import {
   decideComposerSubmission,
   FOLLOWUP_SUBMISSION,
   INDUSTRY_RESEARCH_SUBMISSION,
-  PAPER_ANALYSIS_SUBMISSION,
-  TECHNOLOGY_RESEARCH_SUBMISSION
+  PAPER_ANALYSIS_SUBMISSION
 } from "../public/composer-submit-route.js";
 
 test("an attachment keeps the existing BP review flow without confirmation", () => {
@@ -19,9 +18,8 @@ test("an attachment keeps the existing BP review flow without confirmation", () 
   assert.equal(result, ATTACHMENT_SUBMISSION);
 });
 
-test("industry, technology and paper modes submit their explicit research task types", () => {
+test("industry and paper modes submit their explicit research task types", () => {
   assert.equal(decideComposerSubmission({ taskType: "industry_research" }), INDUSTRY_RESEARCH_SUBMISSION);
-  assert.equal(decideComposerSubmission({ taskType: "technology_research" }), TECHNOLOGY_RESEARCH_SUBMISSION);
   assert.equal(decideComposerSubmission({ taskType: "paper_analysis" }), PAPER_ANALYSIS_SUBMISSION);
 });
 

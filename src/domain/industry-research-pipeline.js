@@ -157,8 +157,7 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
     await repository.saveReport(context.job.id, context.report);
     let pdfStoragePath = context.job.pdfStoragePath || "";
     if (pdfReportService && repository.savePdf) {
-      const technology = context.job.taskType === "technology_research";
-      const suffix = context.job.outputLanguage === "en" ? (technology ? "Technology Research Report" : "Industry Research Report") : (technology ? "技术调研报告" : "行业研究报告");
+      const suffix = context.job.outputLanguage === "en" ? "Industry Research Report" : "行业研究报告";
       const pdf = await pdfReportService.render({ title: `${context.job.companyName} ${suffix}`, markdown: context.report });
       pdfStoragePath = await repository.savePdf(context.job.id, pdf, { date: context.job.createdAt || now() });
     }
@@ -175,15 +174,13 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
   return { execute, steps: steps.map(({ key, label }) => ({ key, label })) };
 }
 
-export function createIndustryResearchJob({ taskType = "industry_research", topic, instruction, outputLanguage = "zh", researchTemplate, steps, now = () => new Date().toISOString() }) {
+export function createIndustryResearchJob({ topic, instruction, outputLanguage = "zh", researchTemplate, steps, now = () => new Date().toISOString() }) {
   const createdAt = now();
   const name = String(topic || "").trim();
   const normalizedLanguage = String(outputLanguage).toLowerCase().startsWith("en") ? "en" : "zh";
-  const normalizedTaskType = taskType === "technology_research" ? "technology_research" : "industry_research";
-  const normalizedTemplate = normalizedTaskType === "technology_research" ? "technical" : (["industry_overview", "technical", "commercial", "investment"].includes(researchTemplate) ? researchTemplate : "industry_overview");
+  const normalizedTemplate = ["industry_overview", "technical", "commercial", "investment"].includes(researchTemplate) ? researchTemplate : "industry_overview";
   const selected = resolveIndustryResearchTemplate(normalizedTemplate, normalizedLanguage);
-  const prefix = normalizedTaskType === "technology_research" ? "technology" : "industry";
-  return { id: `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 20)}`, taskType: normalizedTaskType, companyName: name, title: `${name} · ${selected.label}`, instruction: String(instruction || (normalizedLanguage === "en" ? `Complete a ${selected.label.toLowerCase()} report` : `完成${selected.label}`)).trim(), outputLanguage: normalizedLanguage, researchTemplate: normalizedTemplate, upload: null, status: "queued", stages: steps.map((step) => ({ ...step, status: "pending" })), checkpoints: {}, messages: [], createdAt, updatedAt: createdAt };
+  return { id: `industry_${randomUUID().replace(/-/g, "").slice(0, 20)}`, taskType: "industry_research", companyName: name, title: `${name} · ${selected.label}`, instruction: String(instruction || (normalizedLanguage === "en" ? `Complete a ${selected.label.toLowerCase()} report` : `完成${selected.label}`)).trim(), outputLanguage: normalizedLanguage, researchTemplate: normalizedTemplate, upload: null, status: "queued", stages: steps.map((step) => ({ ...step, status: "pending" })), checkpoints: {}, messages: [], createdAt, updatedAt: createdAt };
 }
 
 function normalizePlan(value) {
@@ -215,7 +212,6 @@ function checkpointArtifact(context, key) {
 
 function buildSuggestions(context) {
   const unknowns = normalizeResearchQuestions(context.synthesis.unknowns);
-  if (context.job.taskType === "technology_research") return unique([...unknowns, "比较主要技术路线的原理、性能与工程代价", "列出最关键的论文、原型系统和可复现资源", "给出未来 6-12 个月的验证实验路线"]).slice(0, 4);
   return unique([...unknowns, "这个行业最值得投资的价值链环节是什么？", "列出报告中最需要继续核验的关键数字", "哪些变化会推翻当前行业判断？"]).slice(0, 4);
 }
 

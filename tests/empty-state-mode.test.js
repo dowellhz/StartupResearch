@@ -21,14 +21,6 @@ test("unknown modes restore the BP hero", () => {
   assert.match(elements.emptyHeading.innerHTML, /商业计划书/);
 });
 
-test("technology research exposes principle, prototype and validation prompts", () => {
-  const elements = createElements();
-  renderEmptyStateMode(elements, "technology_research");
-  assert.equal(elements.emptyEyebrow.textContent, "TECHNOLOGY RESEARCH COPILOT");
-  assert.match(elements.emptyCopy.textContent, /专项数据库/);
-  assert.equal(elements.buttons[2].lastChild.textContent, "成熟度与验证");
-});
-
 test("English mode renders corresponding paper analysis content", () => {
   setLanguage("en", { persist: false });
   const elements = createElements();

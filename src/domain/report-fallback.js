@@ -1,8 +1,8 @@
 import { REPORT_SECTIONS, REPORT_SECTIONS_EN } from "./review-prompts.js";
 import { isEnglishOutput } from "./report-language.js";
 
-export function buildFallbackReport({ companyName, analysis = {}, businessAudit = {}, claimLedger = {}, investmentAnalysis = {}, sources = [], warning = "", outputLanguage = "zh" } = {}) {
-  if (isEnglishOutput(outputLanguage)) return buildEnglishFallback({ companyName, analysis, sources, warning });
+export function buildFallbackReport({ companyName, analysis = {}, businessAudit = {}, claimLedger = {}, investmentAnalysis = {}, technologyResearch = {}, sources = [], warning = "", outputLanguage = "zh" } = {}) {
+  if (isEnglishOutput(outputLanguage)) return buildEnglishFallback({ companyName, analysis, technologyResearch, sources, warning });
   investmentAnalysis ||= {};
   const claims = Array.isArray(analysis.claims) ? analysis.claims : [];
   const risks = Array.isArray(analysis.risks) ? analysis.risks : [];
@@ -15,7 +15,7 @@ export function buildFallbackReport({ companyName, analysis = {}, businessAudit 
     ["客户、收入与经营数据", claimsByDomain(claims, /客户|收入|经营|财务|出货/)],
     ["商业模式与单位经济", claimsByDomain(claims, /商业模式|单位经济|毛利|成本/)],
     ["竞争格局与差异化", competitorText(investmentAnalysis.competitorMatrix) || claimsByDomain(claims, /竞争|差异|壁垒/)],
-    ["技术与产品壁垒", claimsByDomain(claims, /技术|产品|专利|研发/)],
+    ["技术与产品壁垒", technologyResearch.invoked ? technologyText(technologyResearch) : claimsByDomain(claims, /技术|产品|专利|研发/)],
     ["融资诉求与资金用途", claimsByDomain(claims, /融资|资金|估值/)],
     ["数字与经营假设审计", auditText(businessAudit)],
     ["投资判断与关键里程碑", decisionText(investmentAnalysis.decision)],
@@ -29,7 +29,7 @@ export function buildFallbackReport({ companyName, analysis = {}, businessAudit 
   return `# ${companyName || "未识别公司"} BP 核查报告（阶段性）\n\n> 生成提示：长报告生成异常，系统保留已有分析并自动形成此阶段性版本。\n\n${REPORT_SECTIONS.map((section) => `## ${section}\n\n${sections.get(section) || "本次未形成可核验信息。"}`).join("\n\n")}`;
 }
 
-function buildEnglishFallback({ companyName, analysis = {}, sources = [], warning = "" }) {
+function buildEnglishFallback({ companyName, analysis = {}, technologyResearch = {}, sources = [], warning = "" }) {
   const claims = Array.isArray(analysis.claims) ? analysis.claims : [];
   const risks = Array.isArray(analysis.risks) ? analysis.risks : [];
   const references = sources.length ? sources.slice(0, 24).map((source) => `- [${source.title || source.url}](${source.url})`).join("\n") : "No usable public sources were produced in this run.";
@@ -39,9 +39,21 @@ function buildEnglishFallback({ companyName, analysis = {}, sources = [], warnin
   sections["Company and Product"] = [analysis.companyProfile?.oneLiner, analysis.companyProfile?.stage, analysis.companyProfile?.sector].filter(Boolean).map((item) => `- ${item}`).join("\n") || generic;
   sections["Key Claims Verification Table"] = "| Claim | BP Evidence | Public Verification | Assessment | Confidence | Next Step |\n|---|---|---|---|---|---|\n| Key operating and market claims | See uploaded material | Insufficient evidence in this run | BP-only | Low | Obtain underlying data and independent evidence |";
   sections["Core Risks and Red Flags"] = risks.length ? risks.map((risk) => `- **${risk.category || "Risk"}**: ${risk.description || risk.basis || "Further verification required"}`).join("\n") : generic;
+  if (technologyResearch.invoked) sections["Technology and Product Moat"] = technologyText(technologyResearch, true);
   sections["Recommendations and Next Steps"] = "Prioritize high-importance claims and obtain corporate, financial, customer, technical, and intellectual-property records for verification.";
   sections.References = references;
   return `# ${companyName || "Unidentified Company"} BP Review Report (Preliminary)\n\n> Generation note: the full-report generation failed, so this recoverable preliminary version preserves the available analysis.\n\n${REPORT_SECTIONS_EN.map((section) => `## ${section}\n\n${sections[section]}`).join("\n\n")}`;
+}
+
+function technologyText(value, english = false) {
+  const synthesis = value.synthesis || {};
+  return [
+    `- **${english ? "Technology research topic" : "技术调研主题"}**：${value.plan?.topic || (english ? "Core technology" : "核心技术")}`,
+    `- **${english ? "Maturity" : "成熟度"}**：${synthesis.maturity?.stage || "unknown"}${synthesis.maturity?.basis ? ` — ${synthesis.maturity.basis}` : ""}`,
+    ...array(synthesis.findings).slice(0, 6).map((item) => `- ${item.statement || item}`),
+    ...array(synthesis.bottlenecks).slice(0, 5).map((item) => `- ${english ? "Bottleneck" : "工程瓶颈"}：${item}`),
+    ...array(synthesis.validationPlan).slice(0, 4).map((item) => `- ${english ? "Validation" : "验证"}：${item.hypothesis || item.method || JSON.stringify(item)}`)
+  ].join("\n");
 }
 
 function marketSizingText(market = {}) {
@@ -144,4 +156,8 @@ function evidenceLabel(value) {
   const page = Number(value.pageNumber || value.page || value.page_number) > 0 ? `第 ${Number(value.pageNumber || value.page || value.page_number)} 页` : "页码未核验";
   const quote = String(value.exactQuote || value.quote || "").replace(/\s+/g, " ").trim();
   return quote ? `${page}：“${quote}”` : page;
+}
+
+function array(value) {
+  return Array.isArray(value) ? value : [];
 }

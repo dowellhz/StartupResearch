@@ -5,7 +5,7 @@ import { publicRefresh } from "./evidence-refresh-service.js";
 import { buildFollowupMessages } from "./review-prompts.js";
 import { normalizeReviewReport } from "./report-summary-service.js";
 import { normalizeOutputLanguage } from "./report-language.js";
-import { createSpecialResearchTaskService, INDUSTRY_RESEARCH, PAPER_ANALYSIS, TECHNOLOGY_RESEARCH } from "./special-research-task-service.js";
+import { createSpecialResearchTaskService, INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./special-research-task-service.js";
 import { transitionReview } from "./review-state-machine.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
 
@@ -232,7 +232,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   async function refreshEvidence(id, { ownerId } = {}) {
     if (!evidenceRefreshService) throw new Error("公开资料刷新服务未启用");
     const existing = await requireOwnedJob(id, ownerId);
-    if ([INDUSTRY_RESEARCH, TECHNOLOGY_RESEARCH, PAPER_ANALYSIS].includes(taskTypeOf(existing))) throw new Error("该研究类型暂不支持公司公开资料刷新，请使用重新研究或继续追问");
+    if ([INDUSTRY_RESEARCH, PAPER_ANALYSIS].includes(taskTypeOf(existing))) throw new Error("该研究类型暂不支持公司公开资料刷新，请使用重新研究或继续追问");
     if (!["completed", "needs_attention"].includes(existing.status) || !existing.reportAvailable) {
       throw new Error(taskTypeOf(existing) === "company_pre_research" ? "请等待公司预研报告完成后再刷新公开资料" : "请等待 BP 核查报告完成后再刷新公开资料");
     }
@@ -452,7 +452,7 @@ function array(value) {
 }
 
 function recoverableRestartKey(job) {
-  if (job.extractionWarning) return ({ company_pre_research: "fact-extraction", industry_research: "evidence-synthesis", technology_research: "evidence-synthesis", paper_analysis: "metadata-extraction" })[taskTypeOf(job)] || "claim-extraction";
+  if (job.extractionWarning) return ({ company_pre_research: "fact-extraction", industry_research: "evidence-synthesis", paper_analysis: "metadata-extraction" })[taskTypeOf(job)] || "claim-extraction";
   if (job.investmentAnalysisWarning) return "investment-analysis";
   if (job.generationWarning) return "report-generation";
   return "";
@@ -490,6 +490,6 @@ function normalizeComparable(value) {
 }
 
 function taskTypeOf(job) {
-  if (["company_pre_research", INDUSTRY_RESEARCH, TECHNOLOGY_RESEARCH, PAPER_ANALYSIS].includes(job?.taskType)) return job.taskType;
+  if (["company_pre_research", INDUSTRY_RESEARCH, PAPER_ANALYSIS].includes(job?.taskType)) return job.taskType;
   return "attachment_review";
 }

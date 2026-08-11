@@ -4,8 +4,6 @@ import { supportsEvidenceRefresh, taskTypeLabels } from "../public/task-type-lab
 
 test("research task types expose distinct UI labels and refresh policy", () => {
   assert.equal(taskTypeLabels("industry_research").report, "行业研究报告");
-  assert.equal(taskTypeLabels("technology_research").report, "技术调研报告");
-  assert.equal(taskTypeLabels("technology_research").eyebrow, "TECHNOLOGY RESEARCH REPORT");
   assert.equal(taskTypeLabels("paper_analysis").eyebrow, "PAPER ANALYSIS REPORT");
   assert.equal(supportsEvidenceRefresh("paper_analysis"), false);
   assert.equal(supportsEvidenceRefresh("attachment_review"), true);

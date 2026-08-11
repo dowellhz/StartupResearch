@@ -1,13 +1,15 @@
 import { summarizeInvestmentAnalysis } from "./investment-analysis-service.js";
 
-export const BP_PIPELINE_VERSION = 2;
+export const BP_PIPELINE_VERSION = 3;
 
 export function prepareJobForPipeline(job, steps) {
   const existingStages = new Map((Array.isArray(job?.stages) ? job.stages : []).map((stage) => [stage.key, stage]));
   const checkpoints = { ...(job?.checkpoints || {}) };
-  const evidenceIndex = steps.findIndex((step) => step.key === "evidence-verification");
-  if (!checkpoints["evidence-verification"]?.completed && evidenceIndex >= 0) {
-    for (const step of steps.slice(evidenceIndex + 1)) delete checkpoints[step.key];
+  for (const requiredKey of ["technology-research", "evidence-verification"]) {
+    const requiredIndex = steps.findIndex((step) => step.key === requiredKey);
+    if (!checkpoints[requiredKey]?.completed && requiredIndex >= 0) {
+      for (const step of steps.slice(requiredIndex + 1)) delete checkpoints[step.key];
+    }
   }
   return {
     ...job,
@@ -29,6 +31,7 @@ export function checkpointArtifact(context, stepKey) {
     "business-audit": { businessAudit: context.businessAudit },
     "review-framework": { framework: context.framework },
     "public-research": { sources: context.sources, researchWarning: context.researchWarning },
+    "technology-research": { sources: context.sources, technologyResearch: context.technologyResearch, technologyResearchWarning: context.technologyResearchWarning },
     "cross-check": { crossCheck: context.crossCheck, claimLedger: context.claimLedger },
     "evidence-verification": { evidenceManifest: context.evidenceManifest, claimLedger: context.claimLedger },
     "investment-analysis": { investmentAnalysis: context.investmentAnalysis, investmentAnalysisWarning: context.investmentAnalysisWarning },
@@ -140,6 +143,7 @@ export function runningMessage(key) {
     "business-audit": "正在复算 BP 数字关系并识别经营预测中的关键假设…",
     "review-framework": "正在为高优先级声明分配核验目标与搜索查询…",
     "public-research": "DeepSeek Agentic Search 正在检索公司、团队、市场、竞争及专项数据库…",
+    "technology-research": "正在判断核心技术是否需要专项调研，并按需调用论文与技术数据库…",
     "cross-check": "正在区分公开支持、冲突、自述与资料不足…",
     "evidence-verification": "正在逐条核对 BP 原文、页码和网页证据指纹…",
     "investment-analysis": "正在重建市场规模、竞品矩阵、投资判断并比较 BP 版本…",
@@ -157,6 +161,9 @@ export function completedMessage(key, context) {
     : "BP 未形成可复算的结构化数字，已保留待补信息";
   if (key === "review-framework") return `已覆盖 ${context.framework.domains.length} 个核查维度，为 ${context.framework.claimPlans.length} 条声明建立研究计划`;
   if (key === "public-research") return context.sources.length ? `已收集 ${context.sources.length} 个公开来源` : (context.researchWarning || "未形成公开来源");
+  if (key === "technology-research") return context.technologyResearch?.invoked
+    ? context.technologyResearchWarning || `技术调研 Tool 已完成：${context.technologyResearch.plan?.topic || "核心技术"}`
+    : context.technologyResearchWarning || "未识别出需要专项调研的核心技术";
   if (key === "cross-check") return `已生成 ${context.claimLedger.summary.total} 张声明证据卡，其中 ${context.claimLedger.summary.supported} 条获公开支持`;
   if (key === "evidence-verification") return context.evidenceManifest.quality.warning
     || `已核验 ${context.evidenceManifest.summary.traceableDocumentClaims} 条 BP 原文引用`;

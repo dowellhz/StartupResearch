@@ -1,8 +1,8 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
 import { bindComposerInput } from "./composer-keyboard.js";
 import { createComposerDraftController, lastUserInput } from "./composer-draft.js";
-import { ATTACHMENT_SUBMISSION, CANCEL_SUBMISSION, COMPANY_RESEARCH_SUBMISSION, CONFIRM_COMPANY_RESEARCH_SUBMISSION, decideComposerSubmission, FOLLOWUP_SUBMISSION, INDUSTRY_RESEARCH_SUBMISSION, PAPER_ANALYSIS_SUBMISSION, TECHNOLOGY_RESEARCH_SUBMISSION } from "./composer-submit-route.js";
-import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, INDUSTRY_RESEARCH, PAPER_ANALYSIS, TECHNOLOGY_RESEARCH, createComposerTaskModeController, taskTypeForFileInput } from "./composer-task-mode.js";
+import { ATTACHMENT_SUBMISSION, CANCEL_SUBMISSION, COMPANY_RESEARCH_SUBMISSION, CONFIRM_COMPANY_RESEARCH_SUBMISSION, decideComposerSubmission, FOLLOWUP_SUBMISSION, INDUSTRY_RESEARCH_SUBMISSION, PAPER_ANALYSIS_SUBMISSION } from "./composer-submit-route.js";
+import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, INDUSTRY_RESEARCH, PAPER_ANALYSIS, createComposerTaskModeController, taskTypeForFileInput } from "./composer-task-mode.js";
 import { createConfirmationDialogController } from "./confirmation-dialog.js";
 import { bindFileDrop } from "./file-drop.js";
 import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evidence-refresh-ui.js";
@@ -49,12 +49,12 @@ const elements = {
   fileName: document.querySelector("#fileName"),
   filePreview: document.querySelector("#filePreview"),
   exitResearchMode: document.querySelector("#exitResearchMode"),
-  exitIndustryResearchMode: document.querySelector("#exitIndustryResearchMode"), exitTechnologyResearchMode: document.querySelector("#exitTechnologyResearchMode"),
+  exitIndustryResearchMode: document.querySelector("#exitIndustryResearchMode"),
   exitPaperAnalysisMode: document.querySelector("#exitPaperAnalysisMode"),
   helpButton: document.querySelector("#helpButton"),
   helpDialog: document.querySelector("#helpDialog"),
   historyList: document.querySelector("#historyList"),
-  industryResearchPreview: document.querySelector("#industryResearchPreview"), technologyResearchPreview: document.querySelector("#technologyResearchPreview"),
+  industryResearchPreview: document.querySelector("#industryResearchPreview"),
   industryResearchTemplate: document.querySelector("#industryResearchTemplate"),
   languageToggle: document.querySelector("#languageToggle"),
   menuButton: document.querySelector("#menuButton"),
@@ -62,7 +62,7 @@ const elements = {
   modelDot: document.querySelector("#modelDot"),
   modelText: document.querySelector("#modelText"),
   newReviewButton: document.querySelector("#newReviewButton"),
-  newIndustryResearchButton: document.querySelector("#newIndustryResearchButton"), newTechnologyResearchButton: document.querySelector("#newTechnologyResearchButton"),
+  newIndustryResearchButton: document.querySelector("#newIndustryResearchButton"),
   newPaperAnalysisButton: document.querySelector("#newPaperAnalysisButton"),
   noAttachmentDialog: document.querySelector("#noAttachmentDialog"),
   paperAnalysisPreview: document.querySelector("#paperAnalysisPreview"),
@@ -123,7 +123,6 @@ function bindEvents() {
   elements.conversationPdfButton.addEventListener("click", () => downloadConversationPdf(state.currentId));
   elements.newReviewButton.addEventListener("click", resetWorkspace);
   elements.newIndustryResearchButton.addEventListener("click", () => { resetWorkspace(); taskMode.selectIndustryResearchMode(); elements.companyInput.focus(); });
-  elements.newTechnologyResearchButton.addEventListener("click", () => { resetWorkspace(); taskMode.selectTechnologyResearchMode(); elements.companyInput.focus(); });
   elements.newPaperAnalysisButton.addEventListener("click", () => { resetWorkspace(); taskMode.selectPaperAnalysisMode(); elements.paperUrlInput.focus(); });
   elements.helpButton.addEventListener("click", () => elements.helpDialog.showModal());
   elements.closeHelp.addEventListener("click", () => elements.helpDialog.close());
@@ -201,7 +200,6 @@ async function submitComposer(event) {
     return startCompanyPreResearch(prompt);
   }
   if (submission === INDUSTRY_RESEARCH_SUBMISSION) return researchSubmission.start(INDUSTRY_RESEARCH, prompt);
-  if (submission === TECHNOLOGY_RESEARCH_SUBMISSION) return researchSubmission.start(TECHNOLOGY_RESEARCH, prompt);
   if (submission === PAPER_ANALYSIS_SUBMISSION) return researchSubmission.start(PAPER_ANALYSIS, prompt);
   if (submission !== ATTACHMENT_SUBMISSION) return;
   const companyName = elements.companyInput.value.trim();

@@ -26,7 +26,7 @@ import {
   validateAnalysis
 } from "./bp-review-pipeline-support.js";
 
-export function createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService, webResearchEnabled = true, now = () => new Date().toISOString() }) {
+export function createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService, technologyResearchTool, webResearchEnabled = true, now = () => new Date().toISOString() }) {
   if (!evidenceVerificationService) throw new Error("evidence verification dependency is required");
   const steps = [
     { key: "document-parse", label: "解析商业计划书", run: parseDocument },
@@ -34,6 +34,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     { key: "business-audit", label: "审计数字与经营假设", run: auditBusinessClaims },
     { key: "review-framework", label: "建立核查框架", run: buildFramework },
     { key: "public-research", label: "检索公开资料", run: collectPublicSources },
+    { key: "technology-research", label: "按需调用技术调研", run: researchTechnology },
     { key: "cross-check", label: "交叉核查与风险研判", run: crossCheck },
     { key: "evidence-verification", label: "核验页码与原文证据", run: verifyEvidence },
     { key: "investment-analysis", label: "形成投资分析与版本比较", run: analyzeInvestment },
@@ -171,6 +172,29 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     }
   }
 
+  async function researchTechnology(context) {
+    if (!technologyResearchTool) return { ...context, technologyResearch: { invoked: false }, technologyResearchWarning: "" };
+    const value = await technologyResearchTool.research({
+      companyName: context.job.companyName || context.analysis.companyProfile?.companyName,
+      instruction: context.job.instruction,
+      outputLanguage: context.job.outputLanguage,
+      analysis: context.analysis,
+      existingSources: context.sources
+    }, {
+      signal: context.signal,
+      onToolCall: (tool) => emit(context, "stage", stageFor("technology-research", "running", `技术调研正在调用 ${tool.label} 工具…`))
+    });
+    const sources = normalizeEvidenceSources([...context.sources, ...(value.additionalSources || [])]);
+    const { additionalSources: _additionalSources, warning, ...technologyResearch } = value;
+    const technologyResearchWarning = warning || "";
+    return {
+      ...context,
+      sources,
+      technologyResearch: { ...technologyResearch, warning: technologyResearchWarning },
+      technologyResearchWarning
+    };
+  }
+
   async function crossCheck(context) {
     const assessment = buildEvidenceAssessment({ claims: context.analysis.claims, sources: context.sources });
     const claimLedger = buildClaimLedger({
@@ -228,6 +252,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       claimLedger: context.claimLedger,
       researchPlan: context.framework,
       investmentAnalysis: context.investmentAnalysis,
+      technologyResearch: context.technologyResearch,
       sources: context.sources,
       crossCheck: context.crossCheck,
       evidenceManifest: context.evidenceManifest
@@ -268,6 +293,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       businessAudit: context.businessAudit,
       claimLedger: context.claimLedger,
       investmentAnalysis: context.investmentAnalysis,
+      technologyResearch: context.technologyResearch,
       sources: context.sources,
       warning: generationWarning,
       outputLanguage: context.job.outputLanguage
@@ -292,6 +318,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       businessAudit: context.businessAudit,
       claimLedger: context.claimLedger,
       investmentAnalysis: context.investmentAnalysis,
+      technologyResearch: context.technologyResearch,
       document: context.document,
       companyIdentity: context.companyIdentity || context.job.companyIdentity,
       evidenceManifest: context.evidenceManifest
@@ -342,6 +369,8 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       generationWarning: context.generationWarning || "",
       extractionWarning: context.extractionWarning || "",
       investmentAnalysisWarning: context.investmentAnalysisWarning || "",
+      technologyResearch: context.technologyResearch || { invoked: false },
+      technologyResearchWarning: context.technologyResearchWarning || "",
       reanalysisInProgress: false,
       error: "",
       failedStep: "",
