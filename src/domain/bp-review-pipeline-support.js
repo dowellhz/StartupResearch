@@ -1,11 +1,11 @@
 import { summarizeInvestmentAnalysis } from "./investment-analysis-service.js";
 
-export const BP_PIPELINE_VERSION = 3;
+export const BP_PIPELINE_VERSION = 4;
 
 export function prepareJobForPipeline(job, steps) {
   const existingStages = new Map((Array.isArray(job?.stages) ? job.stages : []).map((stage) => [stage.key, stage]));
   const checkpoints = { ...(job?.checkpoints || {}) };
-  for (const requiredKey of ["technology-research", "evidence-verification"]) {
+  for (const requiredKey of ["technology-research", "comparable-company-research", "evidence-verification"]) {
     const requiredIndex = steps.findIndex((step) => step.key === requiredKey);
     if (!checkpoints[requiredKey]?.completed && requiredIndex >= 0) {
       for (const step of steps.slice(requiredIndex + 1)) delete checkpoints[step.key];
@@ -32,6 +32,7 @@ export function checkpointArtifact(context, stepKey) {
     "review-framework": { framework: context.framework },
     "public-research": { sources: context.sources, researchWarning: context.researchWarning },
     "technology-research": { sources: context.sources, technologyResearch: context.technologyResearch, technologyResearchWarning: context.technologyResearchWarning },
+    "comparable-company-research": { sources: context.sources, comparableCompanyResearch: context.comparableCompanyResearch, comparableCompanyResearchWarning: context.comparableCompanyResearchWarning },
     "cross-check": { crossCheck: context.crossCheck, claimLedger: context.claimLedger },
     "evidence-verification": { evidenceManifest: context.evidenceManifest, claimLedger: context.claimLedger },
     "investment-analysis": { investmentAnalysis: context.investmentAnalysis, investmentAnalysisWarning: context.investmentAnalysisWarning },
@@ -144,6 +145,7 @@ export function runningMessage(key) {
     "review-framework": "正在为高优先级声明分配核验目标与搜索查询…",
     "public-research": "DeepSeek Agentic Search 正在检索公司、团队、市场、竞争及专项数据库…",
     "technology-research": "正在判断核心技术是否需要专项调研，并按需调用论文与技术数据库…",
+    "comparable-company-research": "正在确定可比口径并研究国内外同类公司、相邻方案与替代方案…",
     "cross-check": "正在区分公开支持、冲突、自述与资料不足…",
     "evidence-verification": "正在逐条核对 BP 原文、页码和网页证据指纹…",
     "investment-analysis": "正在重建市场规模、竞品矩阵、投资判断并比较 BP 版本…",
@@ -164,6 +166,9 @@ export function completedMessage(key, context) {
   if (key === "technology-research") return context.technologyResearch?.invoked
     ? context.technologyResearchWarning || `技术调研 Tool 已完成：${context.technologyResearch.plan?.topic || "核心技术"}`
     : context.technologyResearchWarning || "未识别出需要专项调研的核心技术";
+  if (key === "comparable-company-research") return context.comparableCompanyResearch?.invoked
+    ? context.comparableCompanyResearchWarning || `已形成 ${peerCount(context.comparableCompanyResearch)} 个有来源支持的国内外同类公司对照`
+    : context.comparableCompanyResearchWarning || "现有信息不足以定义可靠的可比公司口径";
   if (key === "cross-check") return `已生成 ${context.claimLedger.summary.total} 张声明证据卡，其中 ${context.claimLedger.summary.supported} 条获公开支持`;
   if (key === "evidence-verification") return context.evidenceManifest.quality.warning
     || `已核验 ${context.evidenceManifest.summary.traceableDocumentClaims} 条 BP 原文引用`;
@@ -175,6 +180,11 @@ export function completedMessage(key, context) {
   if (key === "quality-gate") return `质量评分 ${context.quality.score}，${context.quality.findings.length} 个提示`;
   if (key === "persist-report") return "报告已保存，可下载 PDF";
   return "已完成";
+}
+
+function peerCount(value) {
+  return ["domesticPeers", "internationalPeers", "alternatives"]
+    .reduce((total, key) => total + (Array.isArray(value?.synthesis?.[key]) ? value.synthesis[key].length : 0), 0);
 }
 
 function normalizeDetectedCompanyName(value) {

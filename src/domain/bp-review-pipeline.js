@@ -26,7 +26,7 @@ import {
   validateAnalysis
 } from "./bp-review-pipeline-support.js";
 
-export function createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService, technologyResearchTool, webResearchEnabled = true, now = () => new Date().toISOString() }) {
+export function createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService, technologyResearchTool, comparableCompanyResearchTool, webResearchEnabled = true, now = () => new Date().toISOString() }) {
   if (!evidenceVerificationService) throw new Error("evidence verification dependency is required");
   const steps = [
     { key: "document-parse", label: "解析商业计划书", run: parseDocument },
@@ -35,6 +35,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     { key: "review-framework", label: "建立核查框架", run: buildFramework },
     { key: "public-research", label: "检索公开资料", run: collectPublicSources },
     { key: "technology-research", label: "按需调用技术调研", run: researchTechnology },
+    { key: "comparable-company-research", label: "研究国内外同类公司", run: researchComparableCompanies },
     { key: "cross-check", label: "交叉核查与风险研判", run: crossCheck },
     { key: "evidence-verification", label: "核验页码与原文证据", run: verifyEvidence },
     { key: "investment-analysis", label: "形成投资分析与版本比较", run: analyzeInvestment },
@@ -195,6 +196,30 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     };
   }
 
+  async function researchComparableCompanies(context) {
+    if (!comparableCompanyResearchTool) return { ...context, comparableCompanyResearch: { invoked: false }, comparableCompanyResearchWarning: "" };
+    const value = await comparableCompanyResearchTool.research({
+      companyName: context.job.companyName || context.analysis.companyProfile?.companyName,
+      instruction: context.job.instruction,
+      outputLanguage: context.job.outputLanguage,
+      analysis: context.analysis,
+      technologyResearch: context.technologyResearch,
+      existingSources: context.sources
+    }, {
+      signal: context.signal,
+      onToolCall: (tool) => emit(context, "stage", stageFor("comparable-company-research", "running", `同类公司研究正在调用 ${tool.label} 工具…`))
+    });
+    const sources = normalizeEvidenceSources([...context.sources, ...(value.additionalSources || [])]);
+    const { additionalSources: _additionalSources, warning, ...comparableCompanyResearch } = value;
+    const comparableCompanyResearchWarning = warning || "";
+    return {
+      ...context,
+      sources,
+      comparableCompanyResearch: { ...comparableCompanyResearch, warning: comparableCompanyResearchWarning },
+      comparableCompanyResearchWarning
+    };
+  }
+
   async function crossCheck(context) {
     const assessment = buildEvidenceAssessment({ claims: context.analysis.claims, sources: context.sources });
     const claimLedger = buildClaimLedger({
@@ -233,6 +258,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       businessAudit: context.businessAudit,
       claimLedger: context.claimLedger,
       sources: context.sources,
+      comparableCompanyResearch: context.comparableCompanyResearch,
       previousAnalysisSnapshot: context.job.previousAnalysisSnapshot
     }, {
       signal: context.signal,
@@ -253,6 +279,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       researchPlan: context.framework,
       investmentAnalysis: context.investmentAnalysis,
       technologyResearch: context.technologyResearch,
+      comparableCompanyResearch: context.comparableCompanyResearch,
       sources: context.sources,
       crossCheck: context.crossCheck,
       evidenceManifest: context.evidenceManifest
@@ -294,6 +321,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       claimLedger: context.claimLedger,
       investmentAnalysis: context.investmentAnalysis,
       technologyResearch: context.technologyResearch,
+      comparableCompanyResearch: context.comparableCompanyResearch,
       sources: context.sources,
       warning: generationWarning,
       outputLanguage: context.job.outputLanguage
@@ -371,6 +399,8 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       investmentAnalysisWarning: context.investmentAnalysisWarning || "",
       technologyResearch: context.technologyResearch || { invoked: false },
       technologyResearchWarning: context.technologyResearchWarning || "",
+      comparableCompanyResearch: context.comparableCompanyResearch || { invoked: false },
+      comparableCompanyResearchWarning: context.comparableCompanyResearchWarning || "",
       reanalysisInProgress: false,
       error: "",
       failedStep: "",

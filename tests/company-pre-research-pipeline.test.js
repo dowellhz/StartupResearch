@@ -42,7 +42,12 @@ test("company pre-research gathers public information without an attachment and 
     technologyCalled = true;
     return { invoked: true, plan: { topic: "工业软件核心算法" }, synthesis: { findings: [], approaches: [], maturity: { stage: "pilot" }, bottlenecks: [], validationPlan: [], unknowns: [] }, additionalSources: [{ title: "技术论文", url: "https://example.com/technology", snippet: "工业算法试点验证" }], warning: "" };
   } };
-  const pipeline = createCompanyPreResearchPipeline({ model, repository, technologyResearchTool });
+  let comparableCompanyCalled = false;
+  const comparableCompanyResearchTool = { research: async () => {
+    comparableCompanyCalled = true;
+    return { invoked: true, plan: { scope: "工业软件" }, synthesis: { dimensions: [], domesticPeers: [], internationalPeers: [], alternatives: [], subjectPositioning: [], gaps: [] }, additionalSources: [], warning: "" };
+  } };
+  const pipeline = createCompanyPreResearchPipeline({ model, repository, technologyResearchTool, comparableCompanyResearchTool });
   const job = createCompanyPreResearchJob({ companyName: "示例科技", instruction: "关注产品和融资", steps: pipeline.steps });
   const result = await pipeline.execute(job);
   assert.equal(result.ok, true, result.error);
@@ -50,7 +55,9 @@ test("company pre-research gathers public information without an attachment and 
   assert.equal(finalJob.upload, null);
   assert.equal(finalJob.status, "completed");
   assert.equal(technologyCalled, true);
+  assert.equal(comparableCompanyCalled, true);
   assert.equal(finalJob.technologyResearch.invoked, true);
+  assert.equal(finalJob.comparableCompanyResearch.invoked, true);
   assert.equal(Object.keys(finalJob.checkpoints).length, pipeline.steps.length);
   assert.equal(searched.requestedTools.includes("general_web_search"), true);
   assert.match(searched.queries[0], /示例科技/);

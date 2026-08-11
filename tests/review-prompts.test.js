@@ -49,11 +49,17 @@ test("long BP inputs remain valid JSON after field-level budgeting", () => {
     claimLedger: { summary: {}, claims: claims.map((claim) => ({ ...claim, status: "bp_only", supportingSources: [], conflictingSources: [], candidateSources: [] })) },
     researchPlan: { domains: ["市场"], claimPlans: [], coverageTargets: [] },
     investmentAnalysis,
+    comparableCompanyResearch: {
+      invoked: true,
+      plan: { scope: "同类产品" },
+      synthesis: { domesticPeers: [{ name: "后排竞品", sourceIds: ["source_39"] }] }
+    },
     sources,
     crossCheck: {}
   })[1].content;
   assert.doesNotThrow(() => JSON.parse(reportPayload));
   assert.equal(JSON.parse(reportPayload).investmentAnalysis.versionComparison.available, true);
+  assert.equal(JSON.parse(reportPayload).publicSources[0].id, "source_39", "sources cited by tool artifacts must survive report budgeting");
   assert.ok(reportPayload.length < 100000);
 });
 

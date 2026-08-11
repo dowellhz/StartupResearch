@@ -43,6 +43,22 @@ test("legacy active reviews rerun downstream stages when technology research is 
   assert.equal(migrated.stages.find((step) => step.key === "technology-research").status, "pending");
 });
 
+test("legacy active reviews rerun downstream stages when comparable company research is introduced", () => {
+  const steps = ["technology-research", "comparable-company-research", "cross-check", "report-generation"]
+    .map((key) => ({ key, label: key }));
+  const migrated = prepareJobForPipeline({
+    checkpoints: {
+      "technology-research": { completed: true },
+      "cross-check": { completed: true },
+      "report-generation": { completed: true }
+    },
+    stages: steps.filter((step) => step.key !== "comparable-company-research").map((step) => ({ ...step, status: "completed" }))
+  }, steps);
+  assert.equal(migrated.checkpoints["technology-research"].completed, true);
+  assert.equal(migrated.checkpoints["cross-check"], undefined);
+  assert.equal(migrated.stages.find((step) => step.key === "comparable-company-research").status, "pending");
+});
+
 test("BP review pipeline checkpoints every stage and keeps a visible report", async () => {
   const saved = [];
   let report = "";
@@ -95,7 +111,18 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
     technologyCalled = true;
     return { invoked: true, plan: { topic: "示例核心技术" }, synthesis: { findings: [], approaches: [], maturity: { stage: "validated_prototype" }, bottlenecks: [], validationPlan: [], unknowns: [] }, additionalSources: [{ title: "技术证据", url: "https://example.com/technology", snippet: "公开技术验证" }], warning: "" };
   } };
-  const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService, technologyResearchTool });
+  let comparableCompanyCalled = false;
+  const comparableCompanyResearchTool = { research: async () => {
+    comparableCompanyCalled = true;
+    return {
+      invoked: true,
+      plan: { scope: "企业服务软件" },
+      synthesis: { dimensions: ["产品"], domesticPeers: [{ name: "国内竞品", sourceIds: ["source_1"] }], internationalPeers: [], alternatives: [], subjectPositioning: [], gaps: [] },
+      additionalSources: [{ title: "国内竞品官网", url: "https://peer.example.com", snippet: "企业服务软件产品" }],
+      warning: ""
+    };
+  } };
+  const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService, technologyResearchTool, comparableCompanyResearchTool });
   const job = createReviewJob({
     companyName: "示例科技",
     instruction: "全面核查",
@@ -115,6 +142,8 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
   assert.equal(result.value.job.investmentAnalysis.decision.stance, "conditional");
   assert.equal(technologyCalled, true);
   assert.equal(result.value.job.technologyResearch.invoked, true);
+  assert.equal(comparableCompanyCalled, true);
+  assert.equal(result.value.job.comparableCompanyResearch.invoked, true);
   assert.equal(result.value.job.quality.metrics.competitorCount, 1);
   assert.ok(result.value.job.sources[0].retrievedAt);
   assert.equal(Object.keys(result.value.job.checkpoints).length, pipeline.steps.length);

@@ -75,7 +75,7 @@ export function buildExtractionMessages({ companyName, instruction, outputLangua
   ];
 }
 
-export function buildReportMessages({ companyName, instruction, outputLanguage, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, technologyResearch, sources, crossCheck, evidenceManifest }) {
+export function buildReportMessages({ companyName, instruction, outputLanguage, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, technologyResearch, comparableCompanyResearch, sources, crossCheck, evidenceManifest }) {
   const sections = reportSections(outputLanguage);
   const english = isEnglishOutput(outputLanguage);
   return [
@@ -99,6 +99,7 @@ export function buildReportMessages({ companyName, instruction, outputLanguage, 
         "BP 页码和逐字原文只能使用 evidenceManifest 中 verificationStatus 为 verified 或 page_corrected 的 documentCitation；failed、unverified 不得表述成已核验。网页 captured 只表示已保存搜索摘要，不代表已核验网页正文。",
         "市场规模、竞品矩阵、投资判断、否决条件和里程碑必须优先使用 investmentAnalysis；结构化结果为空时明确资料缺口，不得自行补造。",
         "technologyResearch.invoked=true 时，“技术与产品壁垒”必须纳入技术调研 Tool 的路线对比、成熟度、工程瓶颈和验证计划，并区分论文证据、实验原型与商业化；invoked=false 时不得声称已完成专项技术调研。",
+        "comparableCompanyResearch.invoked=true 时，“竞争格局与差异化”必须分别呈现国内和海外同类公司，说明可比口径、直接/相邻/替代关系及产品、客户、商业模式、融资、技术和差异；只采用带 sourceIds 的公司。",
         english ? "List changes under ‘Changes in the New BP’ only when versionComparison.available=true; otherwise state that this is the first review or no comparable prior version is available." : "“新版 BP 变化”仅在 versionComparison.available=true 时列出变化；否则写明首次核查或无可比历史版本。",
         "引用公开网页时使用 [来源标题](URL)，URL 只能来自输入 sources。",
         "如果来源 provider 标记为“SEC API 降级”，必须明确说明该项来自限定域名的 Web Research，不得表述成 EDGAR API 已直接核验。",
@@ -109,12 +110,13 @@ export function buildReportMessages({ companyName, instruction, outputLanguage, 
     },
     {
       role: "user",
-      content: buildReportInput({ companyName, instruction, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, technologyResearch, crossCheck, sources, evidenceManifest })
+      content: buildReportInput({ companyName, instruction, document, analysis, businessAudit, claimLedger, researchPlan, investmentAnalysis, technologyResearch, comparableCompanyResearch, crossCheck, sources, evidenceManifest })
     }
   ];
 }
 
-function buildReportInput({ companyName, instruction, document, analysis = {}, businessAudit = {}, claimLedger = {}, researchPlan = {}, investmentAnalysis = {}, technologyResearch = {}, crossCheck, sources = [], evidenceManifest = {} }) {
+function buildReportInput({ companyName, instruction, document, analysis = {}, businessAudit = {}, claimLedger = {}, researchPlan = {}, investmentAnalysis = {}, technologyResearch = {}, comparableCompanyResearch = {}, crossCheck, sources = [], evidenceManifest = {} }) {
+  const reportSources = prioritizeSources(sources, collectSourceIds({ technologyResearch, comparableCompanyResearch }));
   const payload = {
     companyName: String(companyName || "").slice(0, 500),
     instruction: String(instruction || "").slice(0, 4000),
@@ -149,13 +151,14 @@ function buildReportInput({ companyName, instruction, document, analysis = {}, b
     },
     investmentAnalysis: compactInvestmentAnalysis(investmentAnalysis),
     technologyResearch: compactTechnologyResearch(technologyResearch),
+    comparableCompanyResearch: compactComparableCompanyResearch(comparableCompanyResearch),
     evidenceAssessment: crossCheck,
     evidenceManifest: {
       summary: evidenceManifest.summary,
       quality: evidenceManifest.quality,
       claims: array(evidenceManifest.claims).slice(0, 30).map(compactEvidenceClaim)
     },
-    publicSources: array(sources).slice(0, 36).map(compactSource)
+    publicSources: reportSources.slice(0, 36).map(compactSource)
   };
   let result = JSON.stringify(payload);
   if (result.length > 98000) {
@@ -196,6 +199,35 @@ function compactTechnologyResearch(value = {}) {
     bottlenecks: array(value.synthesis?.bottlenecks).slice(0, 12).map((item) => compactValue(item, 400)),
     validationPlan: array(value.synthesis?.validationPlan).slice(0, 10).map((item) => compactObject(item, 800)),
     unknowns: array(value.synthesis?.unknowns).slice(0, 12).map((item) => compactValue(item, 400))
+  };
+}
+
+function collectSourceIds(value) {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) return Array.from(new Set(value.flatMap(collectSourceIds)));
+  return Array.from(new Set([
+    ...array(value.sourceIds).map((item) => compactValue(item, 100)),
+    ...Object.entries(value).filter(([key]) => key !== "sourceIds").flatMap(([, item]) => collectSourceIds(item))
+  ])).filter(Boolean);
+}
+
+function prioritizeSources(sources, priorityIds) {
+  const priorities = new Set(priorityIds);
+  return [...array(sources)].sort((left, right) => Number(priorities.has(right?.id)) - Number(priorities.has(left?.id)));
+}
+
+function compactComparableCompanyResearch(value = {}) {
+  if (!value?.invoked) return { invoked: false, reason: compactValue(value?.plan?.reason, 500) };
+  const compactPeers = (peers) => array(peers).slice(0, 10).map((item) => compactObject(item, 700));
+  return {
+    invoked: true,
+    scope: compactValue(value.plan?.scope, 500),
+    dimensions: array(value.synthesis?.dimensions).slice(0, 8).map((item) => compactValue(item, 200)),
+    domesticPeers: compactPeers(value.synthesis?.domesticPeers),
+    internationalPeers: compactPeers(value.synthesis?.internationalPeers),
+    alternatives: compactPeers(value.synthesis?.alternatives),
+    subjectPositioning: array(value.synthesis?.subjectPositioning).slice(0, 12).map((item) => compactValue(item, 500)),
+    gaps: array(value.synthesis?.gaps).slice(0, 12).map((item) => compactValue(item, 400))
   };
 }
 

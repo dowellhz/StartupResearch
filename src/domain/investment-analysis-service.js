@@ -91,6 +91,7 @@ function buildInvestmentAnalysisMessages(input = {}) {
         "marketSizing 包含 status、method、formula、inputs、scenarios、gaps、sourceIds；status 只能是 reconstructed、partial、not_calculable。",
         "市场测算优先自下而上。inputs 每项包含 name、value、unit、origin、sourceIds；origin 只能写 BP、公开来源、分析假设。scenarios 每项包含 name、result、formula、assumptions、sourceIds。无法测算时保留 gaps，不得补数。",
         "competitorMatrix 包含 dimensions、rows、gaps；rows 每项包含 name、relationship、values、sourceIds、confidence。只列 BP 或公开来源中出现的企业/替代方案。",
+        "comparableCompanyResearch 是已完成来源约束的国内外同类公司研究；competitorMatrix 应优先吸收其中有 sourceIds 的公司和可比维度，不得添加无来源候选。",
         "decision 包含 stance、thesis、antiThesis、keyAssumptions、vetoItems、milestones、nextSteps；stance 只能是 positive、conditional、negative、insufficient。每个 vetoItems 包含 condition、basis、verification、sourceIds，不得把资料缺失直接定性为造假。",
         "versionComparison 包含 available、summary、changes。没有 previousAnalysisSnapshot 时 available=false、changes=[]。有历史快照时只比较输入可证实的变化。",
         "changes 每项包含 field、previous、current、significance、basis；significance 只能是 high、medium、low。",
@@ -102,6 +103,7 @@ function buildInvestmentAnalysisMessages(input = {}) {
 }
 
 function buildInvestmentInput(input) {
+  const prioritizedSources = prioritizeSources(input.sources, collectSourceIds(input.comparableCompanyResearch));
   const payload = {
     companyName: text(input.companyName, 300),
     companyProfile: compactObject(input.analysis?.companyProfile, 300),
@@ -126,7 +128,8 @@ function buildInvestmentInput(input) {
         ])
       }))
     },
-    publicSources: array(input.sources).slice(0, 36).map((item) => ({
+    comparableCompanyResearch: compactObject(input.comparableCompanyResearch, 700),
+    publicSources: prioritizedSources.slice(0, 36).map((item) => ({
       id: text(item?.id, 100),
       title: text(item?.title, 300),
       snippet: text(item?.snippet, 700),
@@ -232,6 +235,20 @@ function ids(value) {
 
 function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function collectSourceIds(value) {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) return unique(value.flatMap(collectSourceIds));
+  return unique([
+    ...array(value.sourceIds).map((item) => text(item, 100)),
+    ...Object.entries(value).filter(([key]) => key !== "sourceIds").flatMap(([, item]) => collectSourceIds(item))
+  ]);
+}
+
+function prioritizeSources(sources, priorityIds) {
+  const priorities = new Set(priorityIds);
+  return [...array(sources)].sort((left, right) => Number(priorities.has(right?.id)) - Number(priorities.has(left?.id)));
 }
 
 function text(value, maxLength) {

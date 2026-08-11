@@ -52,9 +52,10 @@ export function buildCompanyResearchExtractionMessages({ companyName, instructio
   ];
 }
 
-export function buildCompanyResearchReportMessages({ companyName, instruction, outputLanguage, scope, analysis, technologyResearch, sources, researchWarning }) {
+export function buildCompanyResearchReportMessages({ companyName, instruction, outputLanguage, scope, analysis, technologyResearch, comparableCompanyResearch, sources, researchWarning }) {
   const sections = companyResearchSections(outputLanguage);
   const english = isEnglishOutput(outputLanguage);
+  const reportSources = prioritizeSources(sources, collectSourceIds({ technologyResearch, comparableCompanyResearch }));
   return [
     {
       role: "system",
@@ -67,6 +68,7 @@ export function buildCompanyResearchReportMessages({ companyName, instruction, o
         english ? "Do not turn missing search results into claims of nonexistence, fabrication, or zero revenue. When sources are insufficient, write ‘This public-source search produced no verifiable evidence.’" : "不得把检索不到信息升级成不存在、造假或零收入。来源不足时写‘本次公开检索未形成可核验证据’。",
         "引用公开网页时使用 [来源标题](URL)，URL 只能来自输入 sources。",
         "technologyResearch.invoked=true 时，在“产品与技术”中明确写出技术调研 Tool 的路线对比、成熟度、工程瓶颈与验证计划；invoked=false 时不得声称已完成专项技术调研。",
+        "comparableCompanyResearch.invoked=true 时，在“市场与竞争”中分别列出国内和海外同类公司，说明可比口径、直接/相邻/替代关系、产品、客户、商业模式、融资和差异；只采用带 sourceIds 的公司。",
         "开头给出一句总判断和 4-6 条预研要点；结尾给出按优先级排序的补充材料和访谈清单。",
         `以下 ${sections.length} 个二级标题必须各出现一次，标题文本必须完全一致：${sections.map((item) => `## ${item}`).join("；")}`,
         "参考来源必须列出本次实际使用的来源，不要输出代码围栏或生成过程。"
@@ -80,15 +82,16 @@ export function buildCompanyResearchReportMessages({ companyName, instruction, o
         researchScope: scope,
         structuredAnalysis: analysis,
         technologyResearch: compactTechnologyResearch(technologyResearch),
+        comparableCompanyResearch: compactComparableCompanyResearch(comparableCompanyResearch),
         researchWarning: String(researchWarning || "").slice(0, 1000),
-        sources: compactSources(sources, 36)
+        sources: compactSources(reportSources, 36)
       })
     }
   ];
 }
 
-export function buildCompanyResearchFallback({ companyName, analysis = {}, technologyResearch = {}, sources = [], warning = "", outputLanguage = "zh" }) {
-  if (isEnglishOutput(outputLanguage)) return buildEnglishFallback({ companyName, analysis, technologyResearch, sources, warning });
+export function buildCompanyResearchFallback({ companyName, analysis = {}, technologyResearch = {}, comparableCompanyResearch = {}, sources = [], warning = "", outputLanguage = "zh" }) {
+  if (isEnglishOutput(outputLanguage)) return buildEnglishFallback({ companyName, analysis, technologyResearch, comparableCompanyResearch, sources, warning });
   const profile = analysis.companyProfile || {};
   const findings = array(analysis.findings);
   const risks = array(analysis.risks);
@@ -100,7 +103,7 @@ export function buildCompanyResearchFallback({ companyName, analysis = {}, techn
     "主体与公司概况": profile.oneLiner || profile.legalName || "公开资料不足，尚无法稳定确认完整法定主体与公司阶段。",
     "产品与技术": technologyResearch.invoked ? technologyText(technologyResearch) : findingLines(findings, /产品|技术|知识产权/),
     "团队与组织": findingLines(findings, /团队|组织|创始|高管/),
-    "市场与竞争": findingLines(findings, /市场|竞争|行业/),
+    "市场与竞争": comparableCompanyResearch.invoked ? comparableCompanyText(comparableCompanyResearch) : findingLines(findings, /市场|竞争|行业/),
     "客户与商业进展": findingLines(findings, /客户|商业|收入|合作|订单/),
     "融资与资本": findingLines(findings, /融资|资本|股东|主体/),
     "公开风险与待核实事项": risks.length ? risks.map((item) => `- ${item.description || item.category}`).join("\n") : "- 本次公开资料不足以排除重大风险，需继续核实主体、客户、财务和合规信息。",
@@ -110,7 +113,7 @@ export function buildCompanyResearchFallback({ companyName, analysis = {}, techn
   return `# ${companyName} 公司预研报告\n\n${COMPANY_RESEARCH_SECTIONS.map((section) => `## ${section}\n\n${sections[section]}`).join("\n\n")}`;
 }
 
-function buildEnglishFallback({ companyName, analysis = {}, technologyResearch = {}, sources = [], warning = "" }) {
+function buildEnglishFallback({ companyName, analysis = {}, technologyResearch = {}, comparableCompanyResearch = {}, sources = [], warning = "" }) {
   const profile = analysis.companyProfile || {};
   const findings = array(analysis.findings);
   const risks = array(analysis.risks);
@@ -120,7 +123,7 @@ function buildEnglishFallback({ companyName, analysis = {}, technologyResearch =
     "Entity and Company Overview": profile.oneLiner || profile.legalName || generic,
     "Product and Technology": technologyResearch.invoked ? technologyText(technologyResearch, true) : englishFindingLines(findings, /product|technology|intellectual property/i, generic),
     "Team and Organization": englishFindingLines(findings, /team|organization|founder|executive/i, generic),
-    "Market and Competition": englishFindingLines(findings, /market|competition|industry/i, generic),
+    "Market and Competition": comparableCompanyResearch.invoked ? comparableCompanyText(comparableCompanyResearch, true) : englishFindingLines(findings, /market|competition|industry/i, generic),
     "Customers and Commercial Progress": englishFindingLines(findings, /customer|commercial|revenue|partnership|order/i, generic),
     "Financing and Capital": englishFindingLines(findings, /financing|capital|shareholder|entity/i, generic),
     "Public Risks and Open Questions": risks.length ? risks.map((item) => `- ${item.description || item.category}`).join("\n") : `- ${generic}`,
@@ -157,6 +160,48 @@ function compactTechnologyResearch(value = {}) {
     validationPlan: array(value.synthesis?.validationPlan).slice(0, 10),
     unknowns: array(value.synthesis?.unknowns).slice(0, 12)
   };
+}
+
+function compactComparableCompanyResearch(value = {}) {
+  if (!value?.invoked) return { invoked: false, reason: value?.plan?.reason || "" };
+  return {
+    invoked: true,
+    scope: value.plan?.scope,
+    dimensions: array(value.synthesis?.dimensions).slice(0, 8),
+    domesticPeers: array(value.synthesis?.domesticPeers).slice(0, 10),
+    internationalPeers: array(value.synthesis?.internationalPeers).slice(0, 10),
+    alternatives: array(value.synthesis?.alternatives).slice(0, 8),
+    subjectPositioning: array(value.synthesis?.subjectPositioning).slice(0, 12),
+    gaps: array(value.synthesis?.gaps).slice(0, 12)
+  };
+}
+
+function collectSourceIds(value) {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) return Array.from(new Set(value.flatMap(collectSourceIds)));
+  return Array.from(new Set([
+    ...array(value.sourceIds).map(String),
+    ...Object.entries(value).filter(([key]) => key !== "sourceIds").flatMap(([, item]) => collectSourceIds(item))
+  ])).filter(Boolean);
+}
+
+function prioritizeSources(sources, priorityIds) {
+  const priorities = new Set(priorityIds);
+  return [...array(sources)].sort((left, right) => Number(priorities.has(right?.id)) - Number(priorities.has(left?.id)));
+}
+
+function comparableCompanyText(value, english = false) {
+  const synthesis = value.synthesis || {};
+  const peerLines = (label, peers) => array(peers).slice(0, 8).map((peer) =>
+    `- **${label} · ${peer.name}**（${peer.relationship || "adjacent"}）：${peer.product || peer.differentiation || (english ? "Evidence requires further verification." : "详细对比仍需补证")}`);
+  return [
+    `- **${english ? "Comparable scope" : "可比口径"}**：${value.plan?.scope || (english ? "Not established" : "尚未稳定建立")}`,
+    ...peerLines(english ? "Domestic" : "国内", synthesis.domesticPeers),
+    ...peerLines(english ? "International" : "海外", synthesis.internationalPeers),
+    ...peerLines(english ? "Alternative" : "替代方案", synthesis.alternatives),
+    ...array(synthesis.subjectPositioning).slice(0, 6).map((item) => `- ${english ? "Positioning" : "相对定位"}：${item}`),
+    ...array(synthesis.gaps).slice(0, 5).map((item) => `- ${english ? "Evidence gap" : "证据缺口"}：${item}`)
+  ].join("\n");
 }
 
 function technologyText(value, english = false) {

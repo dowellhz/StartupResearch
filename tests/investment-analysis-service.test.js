@@ -30,6 +30,22 @@ test("investment analysis normalizes decision artifacts and rejects invented sou
   assert.deepEqual(result.value.versionComparison.changes, []);
 });
 
+test("investment analysis keeps comparable-company evidence inside its source budget", async () => {
+  let payload;
+  const service = createInvestmentAnalysisService({ model: {
+    complete: async (messages) => {
+      payload = JSON.parse(messages[1].content);
+      return JSON.stringify({ marketSizing: {}, competitorMatrix: {}, decision: {}, versionComparison: {} });
+    }
+  } });
+  const sources = Array.from({ length: 45 }, (_, index) => ({ id: `source_${index + 1}`, title: `来源 ${index + 1}` }));
+  await service.analyze({
+    sources,
+    comparableCompanyResearch: { invoked: true, synthesis: { internationalPeers: [{ name: "海外竞品", sourceIds: ["source_45"] }] } }
+  });
+  assert.equal(payload.publicSources[0].id, "source_45");
+});
+
 test("investment analysis preserves a recoverable empty artifact after its retry budget", async () => {
   let calls = 0;
   const service = createInvestmentAnalysisService({ model: { complete: async () => { calls += 1; return "not-json"; } } });

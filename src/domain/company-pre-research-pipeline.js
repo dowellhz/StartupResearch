@@ -12,12 +12,13 @@ import {
 import { assessCompanyResearchQuality, stabilizeCompanyResearchReport } from "./company-pre-research-quality.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
 
-export function createCompanyPreResearchPipeline({ model, repository, pdfReportService, technologyResearchTool, webResearchEnabled = true, now = () => new Date().toISOString() }) {
+export function createCompanyPreResearchPipeline({ model, repository, pdfReportService, technologyResearchTool, comparableCompanyResearchTool, webResearchEnabled = true, now = () => new Date().toISOString() }) {
   const steps = [
     { key: "research-scope", label: "制定公开研究范围", run: createScope },
     { key: "public-research", label: "抓取公司公开信息", run: collectPublicSources },
     { key: "fact-extraction", label: "整理公开事实与风险", run: extractFacts },
     { key: "technology-research", label: "按需调用技术调研", run: researchTechnology },
+    { key: "comparable-company-research", label: "研究国内外同类公司", run: researchComparableCompanies },
     { key: "report-generation", label: "撰写公司预研报告", run: generateReport },
     { key: "quality-gate", label: "检查来源与报告质量", run: qualityGate },
     { key: "persist-report", label: "保存报告与版本", run: persistReport }
@@ -149,6 +150,30 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
     };
   }
 
+  async function researchComparableCompanies(context) {
+    if (!comparableCompanyResearchTool) return { ...context, comparableCompanyResearch: { invoked: false }, comparableCompanyResearchWarning: "" };
+    const value = await comparableCompanyResearchTool.research({
+      companyName: context.job.companyName,
+      instruction: context.job.instruction,
+      outputLanguage: context.job.outputLanguage,
+      analysis: context.analysis,
+      technologyResearch: context.technologyResearch,
+      existingSources: context.sources
+    }, {
+      signal: context.signal,
+      onToolCall: (tool) => emit(context, "stage", stageFor("comparable-company-research", "running", `同类公司研究正在调用 ${tool.label} 工具…`))
+    });
+    const sources = normalizeEvidenceSources([...context.sources, ...(value.additionalSources || [])]);
+    const { additionalSources: _additionalSources, warning, ...comparableCompanyResearch } = value;
+    const comparableCompanyResearchWarning = warning || "";
+    return {
+      ...context,
+      sources,
+      comparableCompanyResearch: { ...comparableCompanyResearch, warning: comparableCompanyResearchWarning },
+      comparableCompanyResearchWarning
+    };
+  }
+
   async function generateReport(context) {
     const messages = buildCompanyResearchReportMessages({
       companyName: context.job.companyName,
@@ -157,6 +182,7 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
       scope: context.scope,
       analysis: context.analysis,
       technologyResearch: context.technologyResearch,
+      comparableCompanyResearch: context.comparableCompanyResearch,
       sources: context.sources,
       researchWarning: context.researchWarning
     });
@@ -194,6 +220,7 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
       companyName: context.job.companyName,
       analysis: context.analysis,
       technologyResearch: context.technologyResearch,
+      comparableCompanyResearch: context.comparableCompanyResearch,
       sources: context.sources,
       warning: generationWarning,
       outputLanguage: context.job.outputLanguage
@@ -242,6 +269,8 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
       researchPlan: context.scope,
       technologyResearch: context.technologyResearch || { invoked: false },
       technologyResearchWarning: context.technologyResearchWarning || "",
+      comparableCompanyResearch: context.comparableCompanyResearch || { invoked: false },
+      comparableCompanyResearchWarning: context.comparableCompanyResearchWarning || "",
       researchWarning: context.researchWarning || "",
       generationWarning: context.generationWarning || "",
       extractionWarning: context.extractionWarning || "",
@@ -298,6 +327,7 @@ function checkpointArtifact(context, stepKey) {
     "public-research": { sources: context.sources, researchWarning: context.researchWarning },
     "fact-extraction": { analysis: context.analysis, extractionWarning: context.extractionWarning },
     "technology-research": { sources: context.sources, technologyResearch: context.technologyResearch, technologyResearchWarning: context.technologyResearchWarning },
+    "comparable-company-research": { sources: context.sources, comparableCompanyResearch: context.comparableCompanyResearch, comparableCompanyResearchWarning: context.comparableCompanyResearchWarning },
     "report-generation": { report: context.report, generationWarning: context.generationWarning },
     "quality-gate": { report: context.report, quality: context.quality },
     "persist-report": {}
@@ -366,6 +396,7 @@ function runningMessage(key) {
     "public-research": "正在调用公开网页与专项数据工具抓取公司信息…",
     "fact-extraction": "正在区分公开事实、公司自述、第三方报道和分析推断…",
     "technology-research": "正在判断公司核心技术是否需要专项调研，并按需调用论文与技术数据库…",
+    "comparable-company-research": "正在定义可比口径并分别研究国内、海外同类公司与替代方案…",
     "report-generation": "正在基于公开来源撰写公司预研报告…",
     "quality-gate": "正在检查报告章节、来源和引用范围…",
     "persist-report": "正在保存报告与可恢复 checkpoint…"
@@ -379,6 +410,9 @@ function completedMessage(key, context) {
   if (key === "technology-research") return context.technologyResearch?.invoked
     ? context.technologyResearchWarning || `技术调研 Tool 已完成：${context.technologyResearch.plan?.topic || "核心技术"}`
     : context.technologyResearchWarning || "未识别出需要专项调研的核心技术";
+  if (key === "comparable-company-research") return context.comparableCompanyResearch?.invoked
+    ? context.comparableCompanyResearchWarning || `已形成 ${peerCount(context.comparableCompanyResearch)} 个有来源支持的同类公司对照`
+    : context.comparableCompanyResearchWarning || "现有信息不足以定义可靠的可比公司口径";
   if (key === "report-generation") return `报告正文已生成，共 ${context.report.length} 个字符`;
   if (key === "quality-gate") return `质量评分 ${context.quality.score}，${context.quality.findings.length} 个提示`;
   if (key === "persist-report") return "公司预研报告已保存，可下载 PDF";
@@ -393,11 +427,18 @@ function array(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function peerCount(value) {
+  return ["domesticPeers", "internationalPeers", "alternatives"]
+    .reduce((total, key) => total + array(value?.synthesis?.[key]).length, 0);
+}
+
 function prepareJob(job, steps) {
   const checkpoints = { ...(job.checkpoints || {}) };
-  const index = steps.findIndex((step) => step.key === "technology-research");
-  if (!checkpoints["technology-research"]?.completed && index >= 0) {
-    for (const step of steps.slice(index + 1)) delete checkpoints[step.key];
+  for (const requiredKey of ["technology-research", "comparable-company-research"]) {
+    const index = steps.findIndex((step) => step.key === requiredKey);
+    if (!checkpoints[requiredKey]?.completed && index >= 0) {
+      for (const step of steps.slice(index + 1)) delete checkpoints[step.key];
+    }
   }
   const existing = new Map(array(job.stages).map((stage) => [stage.key, stage]));
   return {

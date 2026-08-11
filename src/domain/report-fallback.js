@@ -1,8 +1,8 @@
 import { REPORT_SECTIONS, REPORT_SECTIONS_EN } from "./review-prompts.js";
 import { isEnglishOutput } from "./report-language.js";
 
-export function buildFallbackReport({ companyName, analysis = {}, businessAudit = {}, claimLedger = {}, investmentAnalysis = {}, technologyResearch = {}, sources = [], warning = "", outputLanguage = "zh" } = {}) {
-  if (isEnglishOutput(outputLanguage)) return buildEnglishFallback({ companyName, analysis, technologyResearch, sources, warning });
+export function buildFallbackReport({ companyName, analysis = {}, businessAudit = {}, claimLedger = {}, investmentAnalysis = {}, technologyResearch = {}, comparableCompanyResearch = {}, sources = [], warning = "", outputLanguage = "zh" } = {}) {
+  if (isEnglishOutput(outputLanguage)) return buildEnglishFallback({ companyName, analysis, technologyResearch, comparableCompanyResearch, sources, warning });
   investmentAnalysis ||= {};
   const claims = Array.isArray(analysis.claims) ? analysis.claims : [];
   const risks = Array.isArray(analysis.risks) ? analysis.risks : [];
@@ -14,7 +14,7 @@ export function buildFallbackReport({ companyName, analysis = {}, businessAudit 
     ["市场规模与增长假设", marketSizingText(investmentAnalysis.marketSizing) || claimsByDomain(claims, /市场|增长|规模/)],
     ["客户、收入与经营数据", claimsByDomain(claims, /客户|收入|经营|财务|出货/)],
     ["商业模式与单位经济", claimsByDomain(claims, /商业模式|单位经济|毛利|成本/)],
-    ["竞争格局与差异化", competitorText(investmentAnalysis.competitorMatrix) || claimsByDomain(claims, /竞争|差异|壁垒/)],
+    ["竞争格局与差异化", comparableCompanyResearch.invoked ? comparableCompanyText(comparableCompanyResearch) : competitorText(investmentAnalysis.competitorMatrix) || claimsByDomain(claims, /竞争|差异|壁垒/)],
     ["技术与产品壁垒", technologyResearch.invoked ? technologyText(technologyResearch) : claimsByDomain(claims, /技术|产品|专利|研发/)],
     ["融资诉求与资金用途", claimsByDomain(claims, /融资|资金|估值/)],
     ["数字与经营假设审计", auditText(businessAudit)],
@@ -29,7 +29,7 @@ export function buildFallbackReport({ companyName, analysis = {}, businessAudit 
   return `# ${companyName || "未识别公司"} BP 核查报告（阶段性）\n\n> 生成提示：长报告生成异常，系统保留已有分析并自动形成此阶段性版本。\n\n${REPORT_SECTIONS.map((section) => `## ${section}\n\n${sections.get(section) || "本次未形成可核验信息。"}`).join("\n\n")}`;
 }
 
-function buildEnglishFallback({ companyName, analysis = {}, technologyResearch = {}, sources = [], warning = "" }) {
+function buildEnglishFallback({ companyName, analysis = {}, technologyResearch = {}, comparableCompanyResearch = {}, sources = [], warning = "" }) {
   const claims = Array.isArray(analysis.claims) ? analysis.claims : [];
   const risks = Array.isArray(analysis.risks) ? analysis.risks : [];
   const references = sources.length ? sources.slice(0, 24).map((source) => `- [${source.title || source.url}](${source.url})`).join("\n") : "No usable public sources were produced in this run.";
@@ -40,6 +40,7 @@ function buildEnglishFallback({ companyName, analysis = {}, technologyResearch =
   sections["Key Claims Verification Table"] = "| Claim | BP Evidence | Public Verification | Assessment | Confidence | Next Step |\n|---|---|---|---|---|---|\n| Key operating and market claims | See uploaded material | Insufficient evidence in this run | BP-only | Low | Obtain underlying data and independent evidence |";
   sections["Core Risks and Red Flags"] = risks.length ? risks.map((risk) => `- **${risk.category || "Risk"}**: ${risk.description || risk.basis || "Further verification required"}`).join("\n") : generic;
   if (technologyResearch.invoked) sections["Technology and Product Moat"] = technologyText(technologyResearch, true);
+  if (comparableCompanyResearch.invoked) sections["Competitive Landscape and Differentiation"] = comparableCompanyText(comparableCompanyResearch, true);
   sections["Recommendations and Next Steps"] = "Prioritize high-importance claims and obtain corporate, financial, customer, technical, and intellectual-property records for verification.";
   sections.References = references;
   return `# ${companyName || "Unidentified Company"} BP Review Report (Preliminary)\n\n> Generation note: the full-report generation failed, so this recoverable preliminary version preserves the available analysis.\n\n${REPORT_SECTIONS_EN.map((section) => `## ${section}\n\n${sections[section]}`).join("\n\n")}`;
@@ -53,6 +54,20 @@ function technologyText(value, english = false) {
     ...array(synthesis.findings).slice(0, 6).map((item) => `- ${item.statement || item}`),
     ...array(synthesis.bottlenecks).slice(0, 5).map((item) => `- ${english ? "Bottleneck" : "工程瓶颈"}：${item}`),
     ...array(synthesis.validationPlan).slice(0, 4).map((item) => `- ${english ? "Validation" : "验证"}：${item.hypothesis || item.method || JSON.stringify(item)}`)
+  ].join("\n");
+}
+
+function comparableCompanyText(value, english = false) {
+  const synthesis = value.synthesis || {};
+  const peerLines = (label, peers) => array(peers).slice(0, 8).map((peer) =>
+    `- **${label} · ${peer.name}**（${peer.relationship || "adjacent"}）：${peer.product || peer.differentiation || (english ? "Further evidence required" : "详细对比仍需补证")}`);
+  return [
+    `- **${english ? "Comparable scope" : "可比口径"}**：${value.plan?.scope || (english ? "Not established" : "尚未稳定建立")}`,
+    ...peerLines(english ? "Domestic" : "国内", synthesis.domesticPeers),
+    ...peerLines(english ? "International" : "海外", synthesis.internationalPeers),
+    ...peerLines(english ? "Alternative" : "替代方案", synthesis.alternatives),
+    ...array(synthesis.subjectPositioning).slice(0, 6).map((item) => `- ${english ? "Positioning" : "相对定位"}：${item}`),
+    ...array(synthesis.gaps).slice(0, 5).map((item) => `- ${english ? "Evidence gap" : "证据缺口"}：${item}`)
   ].join("\n");
 }
 
