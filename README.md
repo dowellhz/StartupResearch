@@ -4,6 +4,8 @@ VentureLens 是一个面向投资研究的 AI 工作台。它不只总结商业�
 
 当前版本：`0.3.0` · [查看 Releases](https://github.com/dowellhz/StartupResearch/releases)
 
+在线 Demo：[https://c.nlvcwiki.com/](https://c.nlvcwiki.com/)
+
 ## 适合做什么
 
 | 任务 | 输入 | 主要产出 |
