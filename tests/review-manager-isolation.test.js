@@ -27,7 +27,7 @@ test("review manager hides jobs, reports, and owner identifiers across browsers"
   );
 });
 
-test("legacy unowned job is claimed by the first browser that opens it", async () => {
+test("legacy unowned job stays quarantined from every browser", async () => {
   const ownerId = `anon_${"d".repeat(43)}`;
   let job = { id: "bp_legacy", status: "completed", reportAvailable: false, checkpoints: {}, upload: { filename: "legacy.pdf" } };
   const repository = {
@@ -36,10 +36,8 @@ test("legacy unowned job is claimed by the first browser that opens it", async (
     save: async (value) => { job = value; return value; }
   };
   const manager = createReviewManagerService({ pipeline: { steps: [] }, repository, model: {} });
-  const result = await manager.get("bp_legacy", { ownerId });
-  assert.equal(result.id, "bp_legacy");
-  assert.equal(job.ownerId, ownerId);
-  assert.equal("ownerId" in result, false);
+  await assert.rejects(manager.get("bp_legacy", { ownerId }), (error) => error.statusCode === 404);
+  assert.equal(job.ownerId, undefined);
 });
 
 test("reanalyze archives the visible report and resets checkpoints while retaining ownership", async () => {
@@ -261,4 +259,49 @@ test("manual evidence refresh is owner-scoped and hides internal refresh checkpo
   assert.equal("checkpoints" in result.evidenceRefresh, false);
   await assert.rejects(manager.refreshEvidence("bp_refresh", { ownerId }), /正在刷新/);
   await assert.rejects(manager.refreshEvidence("bp_refresh", { ownerId: `anon_${"z".repeat(43)}` }), /未找到/);
+});
+
+test("an interrupted follow-up keeps the user question and partial assistant draft", async () => {
+  const ownerId = `anon_${"q".repeat(43)}`;
+  let job = { id: "bp_followup_draft", ownerId, companyName: "示例", status: "completed", reportAvailable: true, checkpoints: {}, messages: [] };
+  const repository = {
+    get: async () => job,
+    getReport: async () => "# 报告",
+    save: async (value) => { job = value; return value; }
+  };
+  const model = {
+    stream: async (_messages, { onDelta }) => {
+      onDelta("已生成一半");
+      throw new Error("socket internal detail");
+    }
+  };
+  const manager = createReviewManagerService({ pipeline: { steps: [] }, repository, model });
+  await assert.rejects(manager.ask("bp_followup_draft", "请继续分析", { ownerId }), /socket/);
+  assert.deepEqual(job.messages.map((message) => [message.role, message.status]), [["user", "complete"], ["assistant", "incomplete"]]);
+  assert.equal(job.messages[1].content, "已生成一半");
+});
+
+test("owner active-task capacity rejects additional expensive work with 429", async () => {
+  const ownerId = `anon_${"c".repeat(43)}`;
+  const jobs = Array.from({ length: 3 }, (_, index) => ({ id: `bp_active_${index}`, ownerId, status: "running", checkpoints: {}, upload: { sha256: `hash-${index}` } }));
+  const repository = {
+    list: async ({ ownerId: selected }) => jobs.filter((job) => job.ownerId === selected),
+    save: async (job) => job,
+    saveUpload: async () => "upload.source"
+  };
+  const manager = createReviewManagerService({ pipeline: { steps: [], execute: async () => ({ ok: true }) }, repository, model: {}, maxActivePerOwner: 3 });
+  await assert.rejects(manager.create({ instruction: "new", upload: { filename: "bp.pdf", data: Buffer.from("new").toString("base64") } }, { ownerId }), (error) => error.statusCode === 429 && error.code === "active_task_limit");
+});
+
+test("owner active-task capacity also covers retries", async () => {
+  const ownerId = `anon_${"r".repeat(43)}`;
+  const retryJob = { id: "bp_retry_capacity", ownerId, status: "failed", checkpoints: {}, stages: [], error: "failed" };
+  const active = Array.from({ length: 3 }, (_, index) => ({ id: `bp_running_${index}`, ownerId, status: "running" }));
+  const repository = {
+    get: async () => retryJob,
+    list: async () => active,
+    save: async (job) => job
+  };
+  const manager = createReviewManagerService({ pipeline: { steps: [], execute: async () => ({ ok: true }) }, repository, model: {}, maxActivePerOwner: 3 });
+  await assert.rejects(manager.retry(retryJob.id, { ownerId }), (error) => error.statusCode === 429 && error.code === "active_task_limit");
 });

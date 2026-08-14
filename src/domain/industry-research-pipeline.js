@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
-import { Result } from "./result.js";
+import { createPipelineRunner } from "./pipeline-runner.js";
 import { planStructuredResearchTools } from "./research-tool-catalog.js";
 import { normalizeEvidenceSources } from "./research-evidence-service.js";
 import { normalizeResearchQuestions } from "./research-question-service.js";
@@ -24,30 +24,17 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
     { key: "persist-report", label: "保存报告与版本", run: persistReport }
   ];
 
-  async function execute(job, { onEvent = () => {}, signal } = {}) {
-    let context = { job, onEvent, signal };
-    for (const [index, step] of steps.entries()) {
-      if (signal?.aborted) return Result.fail("任务已终止", { failedStep: step.key });
-      if (context.job.checkpoints?.[step.key]?.completed) {
-        context = { ...context, ...(context.job.checkpoints[step.key].artifact || {}) };
-        emit(context, "stage", stageEvent(step, index, steps.length, "restored", "已从 checkpoint 恢复"));
-        continue;
-      }
-      emit(context, "stage", stageEvent(step, index, steps.length, "running", runningMessage(step.key)));
-      try {
-        context.job = await repository.save(context.job);
-        context = await step.run(context);
-        emit(context, "stage", stageEvent(step, index, steps.length, "completed", completedMessage(step.key, context)));
-        context.job = await repository.save({ ...context.job, checkpoints: { ...(context.job.checkpoints || {}), [step.key]: { completed: true, at: now(), artifact: checkpointArtifact(context, step.key) } } });
-      } catch (error) {
-        emit(context, "stage", stageEvent(step, index, steps.length, "failed", error.message || String(error)));
-        await repository.save(context.job).catch(() => {});
-        return Result.fail(error, { failedStep: step.key, context });
-      }
-    }
-    emit(context, "report_complete", { report: context.report, quality: context.quality, status: context.job.status, sources: context.sources, followupSuggestions: context.job.followupSuggestions });
-    return Result.ok(context);
-  }
+  const runner = createPipelineRunner({
+    steps,
+    repository,
+    saveCheckpoint: async (context, step) => ({ ...context, job: await repository.save({ ...context.job, checkpoints: { ...(context.job.checkpoints || {}), [step.key]: { completed: true, at: now(), artifact: checkpointArtifact(context, step.key) } } }) }),
+    emitStage: (context, step, index, status, message) => emit(context, "stage", stageEvent(step, index, steps.length, status, message)),
+    runningMessage,
+    completedMessage,
+    onComplete: (context) => emit(context, "report_complete", { report: context.report, quality: context.quality, status: context.job.status, sources: context.sources, followupSuggestions: context.job.followupSuggestions })
+  });
+
+  const execute = runner.execute;
 
   async function planResearch(context) {
     const selected = resolveIndustryResearchTemplate(context.job.researchTemplate, context.job.outputLanguage);
@@ -155,13 +142,7 @@ export function createIndustryResearchPipeline({ model, repository, pdfReportSer
 
   async function persistReport(context) {
     await repository.saveReport(context.job.id, context.report);
-    let pdfStoragePath = context.job.pdfStoragePath || "";
-    if (pdfReportService && repository.savePdf) {
-      const suffix = context.job.outputLanguage === "en" ? "Industry Research Report" : "行业研究报告";
-      const pdf = await pdfReportService.render({ title: `${context.job.companyName} ${suffix}`, markdown: context.report });
-      pdfStoragePath = await repository.savePdf(context.job.id, pdf, { date: context.job.createdAt || now() });
-    }
-    const finalJob = { ...context.job, status: context.quality.ok ? "completed" : "needs_attention", reportAvailable: true, pdfStoragePath, quality: context.quality, sources: context.sources, analysis: context.synthesis, researchPlan: context.plan, researchWarning: context.researchWarning || "", generationWarning: context.generationWarning || "", extractionWarning: context.synthesisWarning || "", followupSuggestions: buildSuggestions(context), reanalysisInProgress: false, error: "", failedStep: "", completedAt: now() };
+    const finalJob = { ...context.job, status: context.quality.ok ? "completed" : "needs_attention", reportAvailable: true, pdfStoragePath: "", quality: context.quality, sources: context.sources, analysis: context.synthesis, researchPlan: context.plan, researchWarning: context.researchWarning || "", generationWarning: context.generationWarning || "", extractionWarning: context.synthesisWarning || "", followupSuggestions: buildSuggestions(context), reanalysisInProgress: false, error: "", failedStep: "", completedAt: now() };
     await repository.save(finalJob);
     return { ...context, job: finalJob };
   }

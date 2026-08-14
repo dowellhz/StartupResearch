@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,11 +12,12 @@ import { buildConversationExport } from "./src/domain/conversation-export-servic
 import { createEvidenceRefreshService } from "./src/domain/evidence-refresh-service.js";
 import { createIndustryResearchPipeline } from "./src/domain/industry-research-pipeline.js";
 import { createInvestmentAnalysisService } from "./src/domain/investment-analysis-service.js";
+import { createLazyPdfService } from "./src/domain/lazy-pdf-service.js";
 import { createPaperAnalysisPipeline } from "./src/domain/paper-analysis-pipeline.js";
 import { createReviewManagerService } from "./src/domain/review-manager-service.js";
+import { createSemanticOverclaimService } from "./src/domain/semantic-overclaim-service.js";
 import { createTechnologyResearchToolService } from "./src/domain/technology-research-tool-service.js";
 import { recoverActiveReviews } from "./src/domain/startup-recovery-service.js";
-import { normalizeReviewReport } from "./src/domain/report-summary-service.js";
 import { createDeepSeekModelService } from "./src/infra/deepseek-model-service.js";
 import { createBrowserSessionService } from "./src/infra/browser-session-service.js";
 import { createBoundedTaskQueue } from "./src/infra/bounded-task-queue.js";
@@ -25,12 +27,20 @@ import { createGoogleAuthService } from "./src/infra/google-auth-service.js";
 import { createLinkedPageResearchService } from "./src/infra/linked-page-research-service.js";
 import { createPdfReportService } from "./src/infra/pdf-report-service.js";
 import { createPdfWorkerExtractionService } from "./src/infra/pdf-worker-extraction-service.js";
+import { createJsonlLogger } from "./src/infra/jsonl-logger.js";
+import { acquireProcessLease } from "./src/infra/process-lease.js";
+import { publicError } from "./src/infra/public-error.js";
+import { createRateLimiter, requestClientKey } from "./src/infra/rate-limiter.js";
 import { createStructuredResearchToolService } from "./src/infra/research-tools/structured-research-tool-service.js";
 import { sanitizeVisibleFilename } from "./public/privacy-redaction.js";
 import { createFileReviewRepository } from "./src/storage/file-review-repository.js";
+import { createFileUsageBudget } from "./src/storage/file-usage-budget.js";
+import { createDataRetentionService } from "./src/storage/data-retention-service.js";
 
 loadEnvFile();
 const config = getRuntimeConfig();
+const processLease = await acquireProcessLease({ dataDir: config.dataDir });
+const logger = createJsonlLogger({ dataDir: config.dataDir });
 const repository = createFileReviewRepository({ dataDir: config.dataDir });
 await repository.initialize();
 const researchTools = createStructuredResearchToolService({ credentials: config.researchTools });
@@ -45,23 +55,43 @@ const companyIdentity = createCompanyIdentityService({ extractor, model });
 const investmentAnalysis = createInvestmentAnalysisService({ model });
 const evidenceVerification = createEvidenceVerificationService();
 const evidenceRefresh = createEvidenceRefreshService({ model, repository });
+const semanticQuality = createSemanticOverclaimService({ model, enabled: config.semanticQualityCheckEnabled });
 const pdf = createPdfReportService();
-const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService: pdf, investmentAnalysisService: investmentAnalysis, evidenceVerificationService: evidenceVerification, technologyResearchTool, comparableCompanyResearchTool, webResearchEnabled: config.webResearchEnabled });
+const researchTaskQueue = createBoundedTaskQueue({ concurrency: config.jobs.globalConcurrency });
+const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService: pdf, investmentAnalysisService: investmentAnalysis, evidenceVerificationService: evidenceVerification, semanticQualityService: semanticQuality, technologyResearchTool, comparableCompanyResearchTool, webResearchEnabled: config.webResearchEnabled });
 const companyResearchPipeline = createCompanyPreResearchPipeline({ model, repository, pdfReportService: pdf, technologyResearchTool, comparableCompanyResearchTool, webResearchEnabled: config.webResearchEnabled });
 const industryResearchPipeline = createIndustryResearchPipeline({ model, repository, pdfReportService: pdf, webResearchEnabled: config.webResearchEnabled });
 const paperSourceFetcher = createLinkedPageResearchService({ documentExtractor: extractor, limits: { maxPdfBytes: config.maxUploadBytes, timeoutMs: 20000 } });
 const paperAnalysisPipeline = createPaperAnalysisPipeline({ extractor, model, repository, paperSourceFetcher, pdfReportService: pdf, webResearchEnabled: config.webResearchEnabled });
-const manager = createReviewManagerService({ pipeline, companyResearchPipeline, industryResearchPipeline, paperAnalysisPipeline, repository, model, evidenceRefreshService: evidenceRefresh });
+const manager = createReviewManagerService({
+  pipeline, companyResearchPipeline, industryResearchPipeline, paperAnalysisPipeline, repository, model,
+  evidenceRefreshService: evidenceRefresh, taskQueue: researchTaskQueue, maxActivePerOwner: config.jobs.maxActivePerOwner, logger
+});
 const browserSessions = createBrowserSessionService();
 const googleAuth = createGoogleAuthService({ config: config.auth.google });
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
+const generalRateLimiter = createRateLimiter({ windowMs: config.security.requestWindowMs, max: config.security.requestLimit });
+const expensiveRateLimiter = createRateLimiter({ windowMs: config.security.requestWindowMs, max: config.security.expensiveRequestLimit });
+const usageBudget = createFileUsageBudget({ dataDir: config.dataDir, ownerDailyLimit: config.security.ownerDailyCostUnits, globalDailyLimit: config.security.globalDailyCostUnits });
+const retention = createDataRetentionService({ dataDir: config.dataDir, repository, retentionDays: config.retention.days, graceDays: config.retention.graceDays, logger });
+const lazyPdf = createLazyPdfService({ repository, pdf, titleFor: reportTitle });
+const retentionTimer = setInterval(() => {
+  void retention.cleanup().catch((error) => logger.error("retention.cleanup_failed", { error }));
+}, 24 * 60 * 60 * 1000);
+retentionTimer.unref();
 
 const server = http.createServer(async (req, res) => {
+  req.requestId = randomUUID();
+  res.setHeader("X-Request-Id", req.requestId);
   try {
     await route(req, res);
   } catch (error) {
     if (res.headersSent) return res.end();
-    json(res, error.statusCode || 500, { ok: false, error: error.message || "服务器错误" });
+    const failure = publicError(error, { requestId: req.requestId });
+    if (failure.status < 500 && req.usageReceipt) await usageBudget.refund(req.usageReceipt);
+    await logger.error("http.request_failed", { requestId: req.requestId, method: req.method, path: req.url, error });
+    if (error.retryAfterSeconds) res.setHeader("Retry-After", error.retryAfterSeconds);
+    json(res, failure.status, failure.body);
   }
 });
 
@@ -70,6 +100,10 @@ async function route(req, res) {
   const browserSession = browserSessions.resolve(req, res);
   const authenticatedSession = googleAuth.resolve(req);
   const ownerId = authenticatedSession?.ownerId || browserSession.id;
+  const clientKey = requestClientKey(req, { trustProxy: config.security.trustProxy });
+  if (url.pathname !== "/api/health") {
+    generalRateLimiter.consume(clientKey);
+  }
   if (req.method === "GET" && url.pathname === "/api/auth/session") {
     return json(res, 200, { ok: true, ...googleAuth.status(req) });
   }
@@ -77,10 +111,12 @@ async function route(req, res) {
   if (req.method === "GET" && url.pathname === "/auth/google/callback") {
     const session = await googleAuth.complete(req, res, url);
     await repository.transferOwnership(browserSession.id, session.ownerId);
+    await logger.audit("auth.google_completed", { ownerId: session.ownerId });
     return redirect(res, session.returnTo);
   }
   if (req.method === "POST" && url.pathname === "/auth/logout") {
     googleAuth.logout(req, res);
+    await logger.audit("auth.logged_out", { ownerId });
     return json(res, 200, { ok: true });
   }
   if (req.method === "GET" && url.pathname === "/api/health") {
@@ -92,6 +128,7 @@ async function route(req, res) {
       googleAuthEnabled: googleAuth.enabled,
       googleAuthRequired: googleAuth.required,
       webResearchEnabled: config.webResearchEnabled,
+      researchTaskQueue: researchTaskQueue.snapshot(),
       zeroKeyResearchTools: researchTools.zeroKeyNames(),
       keyedResearchTools: researchTools.keyedStatus()
     });
@@ -99,6 +136,11 @@ async function route(req, res) {
   if (googleAuth.required && !authenticatedSession) {
     if (req.method === "GET" && ["/", "/index.html"].includes(url.pathname)) return googleAuth.begin(req, res, url);
     if (url.pathname.startsWith("/api/")) return json(res, 401, { ok: false, error: "需要使用 Google 账号登录", code: "google_auth_required" });
+  }
+  const cost = expensiveRequestCost(req.method, url.pathname);
+  if (cost) {
+    expensiveRateLimiter.consume(`${clientKey}:${ownerId}`);
+    req.usageReceipt = await usageBudget.consume(ownerId, cost);
   }
   if (req.method === "GET" && url.pathname === "/api/reviews") {
     return json(res, 200, { ok: true, reviews: await manager.list({ ownerId }) });
@@ -188,7 +230,9 @@ async function streamAnswer(req, res, id, ownerId) {
     "X-Accel-Buffering": "no"
   });
   const controller = new AbortController();
-  req.on("close", () => controller.abort());
+  res.on("close", () => {
+    if (!res.writableEnded) void logger.info("followup.client_disconnected", { requestId: req.requestId, jobId: id });
+  });
   try {
     const answer = await manager.ask(id, body.message, {
       ownerId,
@@ -199,7 +243,9 @@ async function streamAnswer(req, res, id, ownerId) {
     });
     writeSse(res, { type: "done", data: { answer } });
   } catch (error) {
-    writeSse(res, { type: "error", data: { message: error.message || String(error) } });
+    await logger.error("followup.stream_failed", { requestId: req.requestId, jobId: id, error });
+    const failure = publicError(error, { requestId: req.requestId });
+    writeSse(res, { type: "error", data: { message: failure.body.error, requestId: req.requestId } });
   }
   res.end();
 }
@@ -207,10 +253,7 @@ async function streamAnswer(req, res, id, ownerId) {
 async function downloadPdf(res, id, ownerId) {
   const review = await manager.get(id, { ownerId });
   if (!review.report) throw Object.assign(new Error("报告尚未生成"), { statusCode: 409 });
-  const buffer = await pdf.render({ title: reportTitle(review), markdown: review.report });
-  const pdfStoragePath = await repository.savePdf(id, buffer, { date: review.createdAt || review.completedAt });
-  const job = await repository.get(id);
-  if (job) await repository.save({ ...job, pdfStoragePath });
+  const buffer = await lazyPdf.getOrRender(review);
   const filename = encodeURIComponent(`${safeFilename(review.companyName || "研究")}-${reportTitle(review).replace(`${review.companyName || "未命名主题"} `, "")}.pdf`);
   res.writeHead(200, {
     "Content-Type": "application/pdf",
@@ -314,7 +357,7 @@ function normalizeUpload(file) {
 }
 
 function writeSse(res, event) {
-  if (!res.writableEnded) res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data || {})}\n\n`);
+  if (!res.writableEnded && !res.destroyed) res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data || {})}\n\n`);
 }
 
 function json(res, status, value) {
@@ -332,25 +375,34 @@ function safeFilename(value) {
 }
 
 server.listen(config.port, config.host, async () => {
-  process.stdout.write(`VentureLens running at http://${config.host}:${config.port}\n`);
-  process.stdout.write(`DeepSeek ${config.model.apiKey ? "configured" : "not configured"} · model ${config.model.model}\n`);
+  await logger.info("server.started", { host: config.host, port: config.port, model: config.model.model, modelConfigured: Boolean(config.model.apiKey) });
   const jobs = await repository.list({ limit: 100 });
-  for (const job of jobs) {
-    if (job.reportAvailable) await ensureStoredPdf(job).catch((error) => process.stderr.write(`PDF backfill ${job.id}: ${error.message}\n`));
-  }
   const recovery = await recoverActiveReviews({ jobs, manager, staleAfterMs: config.recovery.staleAfterMs });
-  process.stdout.write(`Recovery resumed ${recovery.resumed.length}, stopped stale ${recovery.failed.length}\n`);
+  await logger.info("server.recovery_completed", { resumed: recovery.resumed.length, failed: recovery.failed.length, refreshes: recovery.refreshes.length });
+  void retention.cleanup().catch((error) => logger.error("retention.cleanup_failed", { error }));
 });
 
-async function ensureStoredPdf(job) {
-  if (await repository.getPdf(job.id, job.pdfStoragePath)) return;
-  const storedReport = await repository.getReport(job.id);
-  if (!storedReport) return;
-  const markdown = normalizeReviewReport(job, storedReport);
-  const buffer = await pdf.render({ title: reportTitle(job), markdown });
-  const pdfStoragePath = await repository.savePdf(job.id, buffer, { date: job.createdAt || job.completedAt });
-  await repository.save({ ...job, pdfStoragePath });
+function expensiveRequestCost(method, pathname) {
+  if (method !== "POST") return 0;
+  if (pathname === "/api/reviews") return 10;
+  if (/\/messages$/.test(pathname)) return 3;
+  if (/\/(?:retry|reanalyze|company-match)$/.test(pathname)) return 10;
+  if (/\/refresh$/.test(pathname)) return 5;
+  return 0;
 }
+
+async function shutdown(signal) {
+  clearInterval(retentionTimer);
+  await logger.info("server.stopping", { signal });
+  server.close(async () => {
+    await processLease.release();
+    process.exit(0);
+  });
+}
+
+process.once("SIGINT", () => void shutdown("SIGINT"));
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+server.on("close", () => void processLease.release());
 
 function reportTitle(review) {
   if (review.outputLanguage === "en") {

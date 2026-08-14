@@ -66,3 +66,10 @@ test("DeepSeek chat and Anthropic-compatible URLs are derived consistently", () 
   assert.equal(normalizeChatUrl("https://api.deepseek.com/v1"), "https://api.deepseek.com/v1/chat/completions");
   assert.equal(anthropicMessagesUrl("https://api.deepseek.com/chat/completions"), "https://api.deepseek.com/anthropic/v1/messages");
 });
+
+test("production requires authenticated mode unless anonymous access is explicitly acknowledged", () => {
+  assert.throws(() => getRuntimeConfig({ NODE_ENV: "production" }), /生产环境必须启用/);
+  const allowed = getRuntimeConfig({ NODE_ENV: "production", ALLOW_ANONYMOUS_PRODUCTION: "true", DATA_DIR: "tmp/test-data" });
+  assert.equal(allowed.auth.allowAnonymousProduction, true);
+  assert.match(allowed.dataDir, /tmp\/test-data$/);
+});

@@ -150,8 +150,8 @@ test("BP review pipeline checkpoints every stage and keeps a visible report", as
   assert.equal(pipeline.steps.some((step) => step.key === "business-audit"), true);
   assert.equal(pipeline.steps.some((step) => step.key === "investment-analysis"), true);
   assert.match(report, /## 关键声明核查表/);
-  assert.equal(storedPdf, "generated-pdf");
-  assert.equal(result.value.job.pdfStoragePath, "20260804/bp_test.pdf");
+  assert.equal(storedPdf, "", "PDF should be rendered lazily on first download");
+  assert.equal(result.value.job.pdfStoragePath, "");
   assert.equal(events.some((event) => event.type === "report_delta"), true);
   assert.equal(events.some((event) => event.type === "report_complete"), true);
   const finalStageIndex = events.findIndex((event) => event.type === "stage" && event.data.key === "persist-report" && event.data.status === "completed");

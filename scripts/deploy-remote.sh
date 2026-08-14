@@ -4,15 +4,18 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-REMOTE_HOST="${REMOTE_HOST:-nlvcadmin@57.158.28.133}"
-SSH_KEY="${SSH_KEY:-/Users/linlu/Downloads/nlvc.com.pem}"
-REMOTE_DIR="${REMOTE_DIR:-/home/nlvcadmin/startup-research}"
+REMOTE_HOST="${REMOTE_HOST:-}"
+SSH_KEY="${SSH_KEY:-}"
+REMOTE_DIR="${REMOTE_DIR:-}"
 SERVICE_NAME="${SERVICE_NAME:-startup-research.service}"
-PORT="${PORT:-1235}"
-REMOTE_BIND_HOST="${REMOTE_BIND_HOST:-127.0.0.2}"
+SERVICE_USER="${SERVICE_USER:-}"
+SERVICE_GROUP="${SERVICE_GROUP:-}"
+PORT="${PORT:-}"
+REMOTE_BIND_HOST="${REMOTE_BIND_HOST:-}"
 PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-}"
 MAX_REMOTE_DELETIONS="${MAX_REMOTE_DELETIONS:-300}"
 REQUIRE_OPENALEX="${REQUIRE_OPENALEX:-0}"
+REMOTE_BACKUP_DIR="${REMOTE_BACKUP_DIR:-}"
 DEPLOY_BRANCH="main"
 
 log() {
@@ -34,7 +37,22 @@ require_command node
 require_command ssh
 require_command rsync
 require_command curl
+[ -n "$REMOTE_HOST" ] || fail "REMOTE_HOST is required"
+[ -n "$SSH_KEY" ] || fail "SSH_KEY is required"
+[ -n "$REMOTE_DIR" ] || fail "REMOTE_DIR is required"
+[ -n "$REMOTE_BACKUP_DIR" ] || fail "REMOTE_BACKUP_DIR is required"
+[ -n "$PORT" ] || fail "PORT is required"
+[ -n "$REMOTE_BIND_HOST" ] || fail "REMOTE_BIND_HOST is required"
+[ -n "$SERVICE_USER" ] || fail "SERVICE_USER is required"
+[ -n "$SERVICE_GROUP" ] || fail "SERVICE_GROUP is required"
 [ -f "$SSH_KEY" ] || fail "SSH key not found: $SSH_KEY"
+[[ "$REMOTE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail "REMOTE_DIR contains unsupported characters"
+[[ "$REMOTE_BACKUP_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail "REMOTE_BACKUP_DIR contains unsupported characters"
+[[ "$SERVICE_NAME" =~ ^[A-Za-z0-9_.@-]+\.service$ ]] || fail "SERVICE_NAME is invalid"
+[[ "$SERVICE_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || fail "SERVICE_USER is invalid"
+[[ "$SERVICE_GROUP" =~ ^[a-z_][a-z0-9_-]*$ ]] || fail "SERVICE_GROUP is invalid"
+[[ "$PORT" =~ ^[0-9]+$ ]] || fail "PORT must be numeric"
+[[ "$REMOTE_BIND_HOST" =~ ^[A-Za-z0-9:.-]+$ ]] || fail "REMOTE_BIND_HOST is invalid"
 [[ "$MAX_REMOTE_DELETIONS" =~ ^[0-9]+$ ]] || fail "MAX_REMOTE_DELETIONS must be a non-negative integer"
 [[ "$REQUIRE_OPENALEX" =~ ^[01]$ ]] || fail "REQUIRE_OPENALEX must be 0 or 1"
 
@@ -65,7 +83,7 @@ if [ -z "$PUBLIC_HEALTH_URL" ]; then
   PUBLIC_HEALTH_URL="${PUBLIC_BASE_URL%/}/api/health"
 fi
 remote "systemctl cat '$SERVICE_NAME' | grep -Fq 'EnvironmentFile=$REMOTE_DIR/.env'" || fail "service must load credentials from $REMOTE_DIR/.env"
-BACKUP_DIR="/home/nlvcadmin/startup-research-backups/$DEPLOY_COMMIT-$(date -u '+%Y%m%dT%H%M%SZ')"
+BACKUP_DIR="$REMOTE_BACKUP_DIR/$DEPLOY_COMMIT-$(date -u '+%Y%m%dT%H%M%SZ')"
 remote "mkdir -p '$BACKUP_DIR' && tar -C '$REMOTE_DIR' --exclude=.env --exclude=data --exclude=node_modules --exclude=output --exclude=tmp -czf '$BACKUP_DIR/app.tgz' ."
 
 RSYNC_ARGS=(
@@ -87,7 +105,7 @@ log "Syncing committed application ($DELETE_COUNT managed deletions)"
 rsync "${RSYNC_ARGS[@]}" -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" ./ "$REMOTE_HOST:$REMOTE_DIR/"
 
 log "Installing production dependencies and restarting service"
-remote "cd '$REMOTE_DIR' && npm ci --omit=dev && sudo cp ops/startup-research.service /etc/systemd/system/startup-research.service && sudo systemctl daemon-reload && sudo systemctl restart '$SERVICE_NAME'"
+remote "cd '$REMOTE_DIR' && npm ci --omit=dev && sed -e 's|__SERVICE_USER__|$SERVICE_USER|g' -e 's|__SERVICE_GROUP__|$SERVICE_GROUP|g' -e 's|__REMOTE_DIR__|$REMOTE_DIR|g' ops/startup-research.service > '/tmp/$SERVICE_NAME' && sudo install -m 0644 '/tmp/$SERVICE_NAME' '/etc/systemd/system/$SERVICE_NAME' && rm -f '/tmp/$SERVICE_NAME' && sudo systemctl daemon-reload && sudo systemctl restart '$SERVICE_NAME'"
 
 log "Checking service health"
 HEALTH=""

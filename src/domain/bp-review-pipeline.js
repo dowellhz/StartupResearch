@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { buildBpBusinessAudit } from "./bp-business-audit.js";
 import { buildClaimLedger } from "./claim-ledger.js";
-import { Result } from "./result.js";
+import { createPipelineRunner } from "./pipeline-runner.js";
 import { assessReportQuality, stabilizeReport } from "./report-quality-service.js";
 import { buildFallbackReport } from "./report-fallback.js";
 import { buildEvidenceAssessment, normalizeEvidenceSources } from "./research-evidence-service.js";
@@ -26,7 +26,7 @@ import {
   validateAnalysis
 } from "./bp-review-pipeline-support.js";
 
-export function createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService, technologyResearchTool, comparableCompanyResearchTool, webResearchEnabled = true, now = () => new Date().toISOString() }) {
+export function createBpReviewPipeline({ extractor, model, repository, pdfReportService, investmentAnalysisService, evidenceVerificationService, semanticQualityService, technologyResearchTool, comparableCompanyResearchTool, webResearchEnabled = true, now = () => new Date().toISOString() }) {
   if (!evidenceVerificationService) throw new Error("evidence verification dependency is required");
   const steps = [
     { key: "document-parse", label: "解析商业计划书", run: parseDocument },
@@ -44,30 +44,17 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
     { key: "persist-report", label: "保存报告与版本", run: persistReport }
   ];
 
-  async function execute(job, { onEvent = () => {}, signal } = {}) {
-    let context = { job: prepareJobForPipeline(job, steps), signal, onEvent };
-    for (const [index, step] of steps.entries()) {
-      if (signal?.aborted) return Result.fail("任务已终止", { failedStep: step.key });
-      if (context.job.checkpoints?.[step.key]?.completed) {
-        context = restoreCheckpoint(context, step.key);
-        emit(context, "stage", stageEvent(step, index, steps.length, "restored", "已从 checkpoint 恢复"));
-        continue;
-      }
-      emit(context, "stage", stageEvent(step, index, steps.length, "running", runningMessage(step.key)));
-      try {
-        context.job = await repository.save(context.job);
-        context = await step.run(context);
-        const completion = stageEvent(step, index, steps.length, "completed", completedMessage(step.key, context));
-        if (step.key === "claim-extraction") Object.assign(completion, { companyName: context.job.companyName, title: context.job.title });
-        emit(context, "stage", completion);
-        await checkpoint(context, step.key);
-      } catch (error) {
-        emit(context, "stage", stageEvent(step, index, steps.length, "failed", error.message || String(error)));
-        await repository.save(context.job).catch(() => {});
-        return Result.fail(error, { failedStep: step.key, context });
-      }
-    }
-    emit(context, "report_complete", {
+  const runner = createPipelineRunner({
+    steps,
+    repository,
+    prepareContext: (job, runtime) => ({ job: prepareJobForPipeline(job, steps), ...runtime }),
+    restoreContext: (context, step) => restoreCheckpoint(context, step.key),
+    saveCheckpoint: async (context, step) => { await checkpoint(context, step.key); return context; },
+    emitStage: (context, step, index, status, message, extra) => emit(context, "stage", { ...stageEvent(step, index, steps.length, status, message), ...extra }),
+    runningMessage,
+    completedMessage,
+    stageData: (key, context) => key === "claim-extraction" ? { companyName: context.job.companyName, title: context.job.title } : {},
+    onComplete: (context) => emit(context, "report_complete", {
       report: context.report,
       quality: context.quality,
       status: context.job.status,
@@ -77,9 +64,10 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       businessAuditSummary: context.businessAudit?.summary,
       investmentAnalysisSummary: summarizeInvestmentAnalysis(context.investmentAnalysis),
       followupSuggestions: context.job.followupSuggestions
-    });
-    return Result.ok(context);
-  }
+    })
+  });
+
+  const execute = runner.execute;
 
   async function parseDocument(context) {
     const persistedUpload = typeof repository.getUpload === "function"
@@ -369,26 +357,27 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
       quality.ok = false;
       quality.findings.push({ code: "comparable_company_research_warning", severity: "warn", message: context.comparableCompanyResearchWarning });
     }
+    if (semanticQualityService?.check) {
+      const semantic = await semanticQualityService.check({ report: stabilized, claimLedger: context.claimLedger, evidenceManifest: context.evidenceManifest, signal: context.signal });
+      if (semantic.findings.length) {
+        quality.ok = false;
+        quality.metrics.semanticOverclaimCount = semantic.findings.length;
+        quality.findings.push(...semantic.findings.map((item) => ({ code: "semantic_overclaim", severity: "warn", message: `${item.statement}：${item.reason}` })));
+      }
+      if (semantic.warning) quality.findings.push({ code: "semantic_overclaim_check_unavailable", severity: "warn", message: semantic.warning });
+    }
     return { ...context, report: stabilized, quality };
   }
 
   async function persistReport(context) {
     await repository.saveReport(context.job.id, context.report);
     const followupSuggestions = buildFollowupSuggestions({ analysis: context.analysis, quality: context.quality });
-    let pdfStoragePath = context.job.pdfStoragePath || "";
-    if (pdfReportService && typeof repository.savePdf === "function") {
-      const pdf = await pdfReportService.render({
-        title: `${context.job.companyName || (context.job.outputLanguage === "en" ? "Unnamed Company" : "未命名公司")} ${context.job.outputLanguage === "en" ? "BP Review Report" : "BP 核查报告"}`,
-        markdown: context.report
-      });
-      pdfStoragePath = await repository.savePdf(context.job.id, pdf, { date: context.job.createdAt || now() });
-    }
     const finalJob = {
       ...context.job,
       status: context.quality.ok ? "completed" : "needs_attention",
       reportAvailable: true,
       followupSuggestions,
-      pdfStoragePath,
+      pdfStoragePath: "",
       quality: context.quality,
       sources: context.sources,
       analysis: context.analysis,

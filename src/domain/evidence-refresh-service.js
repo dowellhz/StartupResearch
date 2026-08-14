@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { buildClaimLedger } from "./claim-ledger.js";
 import { transitionEvidenceRefresh } from "./evidence-refresh-state-machine.js";
-import { Result } from "./result.js";
+import { createPipelineRunner } from "./pipeline-runner.js";
+import { safePipelineFailure } from "../infra/public-error.js";
 import { buildEvidenceAssessment, normalizeEvidenceSources } from "./research-evidence-service.js";
 import { completeStructuredJson } from "./structured-model-call.js";
 
@@ -33,32 +34,28 @@ export function createEvidenceRefreshService({ model, repository, now = () => ne
     };
   }
 
-  async function execute(job, { onEvent = () => {}, signal } = {}) {
-    let context = { job: await saveRefresh(job, transitionEvidenceRefresh(job.evidenceRefresh, "running")), onEvent, signal };
-    for (const step of steps) {
-      if (signal?.aborted) return Result.fail("资料刷新已终止", { failedStep: step.key, context });
-      if (context.job.evidenceRefresh?.checkpoints?.[step.key]?.completed) {
-        context = restoreCheckpoint(context, step.key);
-        emit(context, step, "restored", "已从刷新 checkpoint 恢复");
-        continue;
-      }
-      emit(context, step, "running", runningMessage(step.key));
-      try {
-        context = await step.run(context);
-        emit(context, step, "completed", completedMessage(step.key, context));
-        context = await checkpoint(context, step.key);
-      } catch (error) {
-        if (signal?.aborted) return Result.fail(error, { failedStep: step.key, context });
-        const refresh = transitionEvidenceRefresh(context.job.evidenceRefresh, "failed", { error: error.message || String(error), failedStep: step.key });
-        context.job = { ...context.job, evidenceRefresh: refresh };
-        emit(context, step, "failed", refresh.error);
-        context.job = await saveRefresh(context.job, context.job.evidenceRefresh);
-        return Result.fail(error, { failedStep: step.key, context });
-      }
-    }
-    onEvent({ type: "refresh_complete", data: { refresh: publicRefresh(context.job.evidenceRefresh), result: context.job.lastEvidenceRefresh }, at: now() });
-    return Result.ok(context);
-  }
+  const runner = createPipelineRunner({
+    steps,
+    repository,
+    abortMessage: "资料刷新已终止",
+    prepareContext: async (job, runtime) => ({ job: await saveRefresh(job, transitionEvidenceRefresh(job.evidenceRefresh, "running")), ...runtime }),
+    getCheckpoint: (context, step) => context.job.evidenceRefresh?.checkpoints?.[step.key],
+    restoreContext: (context, step) => restoreCheckpoint(context, step.key),
+    beforeStep: async (context) => context,
+    saveCheckpoint: (context, step) => checkpoint(context, step.key),
+    emitStage: (context, step, _index, status, message) => emit(context, step, status, message),
+    runningMessage,
+    completedMessage,
+    failureMessage: () => safePipelineFailure(),
+    onFailure: async (context, _error, step) => {
+      if (context.signal?.aborted) return context;
+      const refresh = transitionEvidenceRefresh(context.job.evidenceRefresh, "failed", { error: safePipelineFailure(), failedStep: step.key });
+      return { ...context, job: await saveRefresh({ ...context.job, evidenceRefresh: refresh }, refresh) };
+    },
+    onComplete: (context) => context.onEvent({ type: "refresh_complete", data: { refresh: publicRefresh(context.job.evidenceRefresh), result: context.job.lastEvidenceRefresh }, at: now() })
+  });
+
+  const execute = runner.execute;
 
   async function planRefresh(context) {
     const companyName = String(context.job.companyName || "").trim();

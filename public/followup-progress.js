@@ -77,7 +77,9 @@ export function createFollowupProgressCard(messageStream, { onRender = () => {} 
       clearTimeout(renderTimer);
       renderTimer = null;
       answerWrap.classList.remove("hidden");
-      answerBody.textContent = t("followup.failed", { zh: `回答失败：${message}`, message });
+      answerBody.innerHTML = answer
+        ? `${renderStreamingFollowupMarkdown(answer)}<blockquote>${escapeHtml(t("followup.draftSaved", { zh: "上次回答未完成，已保存为草稿，可重新提问。" }))}</blockquote>`
+        : escapeHtml(t("followup.failed", { zh: `回答失败：${message}`, message }));
       answerBody.classList.remove("streaming-plain", "stream-cursor");
       header.textContent = t("followup.incomplete", { zh: "追问分析未完成" });
       badge.textContent = "ERROR";

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Result } from "./result.js";
+import { createPipelineRunner } from "./pipeline-runner.js";
 import { planStructuredResearchTools } from "./research-tool-catalog.js";
 import { normalizeEvidenceSources } from "./research-evidence-service.js";
 import { normalizeResearchQuestions } from "./research-question-service.js";
@@ -24,36 +24,19 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
     { key: "persist-report", label: "保存报告与版本", run: persistReport }
   ];
 
-  async function execute(job, { onEvent = () => {}, signal } = {}) {
-    let context = { job: prepareJob(job, steps), onEvent, signal };
-    for (const [index, step] of steps.entries()) {
-      if (signal?.aborted) return Result.fail("任务已终止", { failedStep: step.key });
-      if (context.job.checkpoints?.[step.key]?.completed) {
-        context = restoreCheckpoint(context, step.key);
-        emit(context, "stage", stageEvent(step, index, steps.length, "restored", "已从 checkpoint 恢复"));
-        continue;
-      }
-      emit(context, "stage", stageEvent(step, index, steps.length, "running", runningMessage(step.key)));
-      try {
-        context.job = await repository.save(context.job);
-        context = await step.run(context);
-        emit(context, "stage", stageEvent(step, index, steps.length, "completed", completedMessage(step.key, context)));
-        await checkpoint(context, step.key);
-      } catch (error) {
-        emit(context, "stage", stageEvent(step, index, steps.length, "failed", error.message || String(error)));
-        await repository.save(context.job).catch(() => {});
-        return Result.fail(error, { failedStep: step.key, context });
-      }
-    }
-    emit(context, "report_complete", {
-      report: context.report,
-      quality: context.quality,
-      status: context.job.status,
-      sources: context.sources,
-      followupSuggestions: context.job.followupSuggestions
-    });
-    return Result.ok(context);
-  }
+  const runner = createPipelineRunner({
+    steps,
+    repository,
+    prepareContext: (job, runtime) => ({ job: prepareJob(job, steps), ...runtime }),
+    restoreContext: (context, step) => restoreCheckpoint(context, step.key),
+    saveCheckpoint: async (context, step) => { await checkpoint(context, step.key); return context; },
+    emitStage: (context, step, index, status, message) => emit(context, "stage", stageEvent(step, index, steps.length, status, message)),
+    runningMessage,
+    completedMessage,
+    onComplete: (context) => emit(context, "report_complete", { report: context.report, quality: context.quality, status: context.job.status, sources: context.sources, followupSuggestions: context.job.followupSuggestions })
+  });
+
+  const execute = runner.execute;
 
   async function createScope(context) {
     const companyName = context.job.companyName;
@@ -256,17 +239,12 @@ export function createCompanyPreResearchPipeline({ model, repository, pdfReportS
 
   async function persistReport(context) {
     await repository.saveReport(context.job.id, context.report);
-    let pdfStoragePath = context.job.pdfStoragePath || "";
-    if (pdfReportService && typeof repository.savePdf === "function") {
-      const pdf = await pdfReportService.render({ title: `${context.job.companyName} ${context.job.outputLanguage === "en" ? "Company Research Report" : "公司预研报告"}`, markdown: context.report });
-      pdfStoragePath = await repository.savePdf(context.job.id, pdf, { date: context.job.createdAt || now() });
-    }
     const finalJob = {
       ...context.job,
       status: context.quality.ok ? "completed" : "needs_attention",
       reportAvailable: true,
       followupSuggestions: buildSuggestions(context.analysis),
-      pdfStoragePath,
+      pdfStoragePath: "",
       quality: context.quality,
       sources: context.sources,
       analysis: context.analysis,
