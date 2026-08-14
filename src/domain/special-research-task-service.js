@@ -6,7 +6,7 @@ import { normalizeOutputLanguage } from "./report-language.js";
 export const INDUSTRY_RESEARCH = "industry_research";
 export const PAPER_ANALYSIS = "paper_analysis";
 
-export function createSpecialResearchTaskService({ repository, industryResearchPipeline, paperAnalysisPipeline, enqueue = () => {}, pendingCreates = new Map(), now = () => new Date().toISOString() } = {}) {
+export function createSpecialResearchTaskService({ repository, industryResearchPipeline, paperAnalysisPipeline, enqueue = () => {}, beforeCreate = async () => {}, pendingCreates = new Map(), now = () => new Date().toISOString() } = {}) {
   const pipelines = new Map([
     [INDUSTRY_RESEARCH, industryResearchPipeline],
     [PAPER_ANALYSIS, paperAnalysisPipeline]
@@ -36,23 +36,28 @@ export function createSpecialResearchTaskService({ repository, industryResearchP
     const duplicates = await repository.list?.({ ownerId, limit: 100 }) || [];
     const active = duplicates.find((job) => ["queued", "running"].includes(job.status) && duplicateKey(job) === duplicateKey(input));
     if (active) return active;
-    let upload = null;
-    let buffer = null;
-    if (input.upload?.data) {
-      buffer = Buffer.from(input.upload.data, "base64");
-      upload = { ...input.upload, data: "", sha256: createHash("sha256").update(buffer).digest("hex") };
+    const release = await beforeCreate(ownerId);
+    try {
+      let upload = null;
+      let buffer = null;
+      if (input.upload?.data) {
+        buffer = Buffer.from(input.upload.data, "base64");
+        upload = { ...input.upload, data: "", sha256: createHash("sha256").update(buffer).digest("hex") };
+      }
+      let job = input.taskType === INDUSTRY_RESEARCH
+        ? createIndustryResearchJob({ topic: input.companyName, instruction: input.instruction, outputLanguage: input.outputLanguage, researchTemplate: input.researchTemplate, steps: selectedPipeline.steps, now })
+        : createPaperAnalysisJob({ title: input.companyName, instruction: input.instruction, outputLanguage: input.outputLanguage, sourceUrl: input.sourceUrl, upload, steps: selectedPipeline.steps, now });
+      job.ownerId = ownerId;
+      if (buffer && repository.saveUpload) {
+        const storagePath = await repository.saveUpload(job.id, buffer);
+        job.upload = { ...job.upload, persisted: true, storagePath };
+      }
+      job = await repository.save(job);
+      enqueue(job.id);
+      return job;
+    } finally {
+      release?.();
     }
-    let job = input.taskType === INDUSTRY_RESEARCH
-      ? createIndustryResearchJob({ topic: input.companyName, instruction: input.instruction, outputLanguage: input.outputLanguage, researchTemplate: input.researchTemplate, steps: selectedPipeline.steps, now })
-      : createPaperAnalysisJob({ title: input.companyName, instruction: input.instruction, outputLanguage: input.outputLanguage, sourceUrl: input.sourceUrl, upload, steps: selectedPipeline.steps, now });
-    job.ownerId = ownerId;
-    if (buffer && repository.saveUpload) {
-      const storagePath = await repository.saveUpload(job.id, buffer);
-      job.upload = { ...job.upload, persisted: true, storagePath };
-    }
-    job = await repository.save(job);
-    enqueue(job.id);
-    return job;
   }
 
   return { create, handles, pipelineFor };

@@ -89,7 +89,7 @@ BP 核查和公司预研还内置“技术调研” Tool。系统先根据 BP �
         ↓
 投资分析、报告生成与质量门
         ↓
-保存报告、PDF、checkpoint 和可继续追问的对话
+保存报告、checkpoint 和可继续追问的对话；首次下载时生成 PDF
 ```
 
 ## 快速开始
@@ -130,6 +130,17 @@ DEEPSEEK_MODEL=deepseek-chat
 | `PDF_EXTRACTION_TIMEOUT_MS` | `120000` | PDF 子进程解析预算 |
 | `PDF_EXTRACTION_CONCURRENCY` | `1` | PDF 并发解析数 |
 | `ACTIVE_TASK_STALE_MINUTES` | `15` | 启动恢复时的陈旧任务阈值 |
+| `TRUST_PROXY` | `false` | 是否信任反向代理提供的客户端 IP；仅在受控代理后开启 |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | 请求滑动窗口长度 |
+| `RATE_LIMIT_REQUESTS` | `120` | 每客户端窗口内的通用请求上限 |
+| `RATE_LIMIT_EXPENSIVE_REQUESTS` | `10` | 每 IP + owner 窗口内的昂贵操作上限 |
+| `RESEARCH_TASK_CONCURRENCY` | `2` | 单实例全局研究任务并发上限 |
+| `MAX_ACTIVE_TASKS_PER_OWNER` | `3` | 单一所有者同时排队或运行的任务上限 |
+| `OWNER_DAILY_COST_UNITS` | `100` | 单一所有者每日昂贵操作预算 |
+| `GLOBAL_DAILY_COST_UNITS` | `1000` | 全局每日昂贵操作预算 |
+| `DATA_RETENTION_DAYS` | `0` | 终态数据保留天数；`0` 表示不自动清理 |
+| `DATA_RETENTION_GRACE_DAYS` | `7` | 过期数据移入隔离区后的宽限天数 |
+| `SEMANTIC_QUALITY_CHECK_ENABLED` | `true` | 是否启用受预算约束的模型语义过度声称检查 |
 | `PUBLIC_BASE_URL` | 空 | 部署脚本使用的公网根地址 |
 
 所有运行时环境变量统一由 `src/config/runtime-config.js` 读取。不要把真实 `.env`、模型 Key 或 OAuth 凭证提交到 Git。
@@ -151,6 +162,7 @@ AUTH_SESSION_SECRET=至少32字符的随机字符串
 - 未配置完整 OAuth 凭证：只提供匿名浏览器隔离。
 - `GOOGLE_AUTH_REQUIRED=false`：用户可选择 Google 登录，也可以匿名使用。
 - `GOOGLE_AUTH_REQUIRED=true`：除健康检查和登录回调外，必须登录后使用。
+- 生产环境默认拒绝匿名模式；只有显式设置 `ALLOW_ANONYMOUS_PRODUCTION=true` 才允许公开匿名使用，此时仍受 IP、owner、全局预算与任务并发护栏约束。
 - 匿名用户登录后，当前浏览器中的历史任务迁移至 Google 账户。
 
 生产域名及回调地址只应保存在服务器环境配置和 Google Cloud 控制台中，不应硬编码到仓库。
@@ -161,13 +173,21 @@ AUTH_SESSION_SECRET=至少32字符的随机字符串
 
 ```text
 data/jobs/                   任务与 checkpoint
+data/artifacts/              checkpoint 大对象
 data/reports/                Markdown 报告
 data/uploads/YYYYMMDD/       原始上传文件
 data/pdfs/YYYYMMDD/          已生成 PDF
 data/deleted-conversations/  已归档对话
+data/logs/                   应用日志与操作审计 JSONL
 ```
 
 匿名模式通过服务端签发的长期 HttpOnly Cookie 隔离任务。清除 Cookie、使用无痕模式或更换浏览器会产生新的匿名身份；Google 登录模式则按账户隔离。用户上传内容、报告和任务数据不应进入公开仓库。
+
+旧版本中没有 `ownerId` 的任务默认进入隔离状态，普通浏览器不能查看或认领。管理员确认归属后，可执行 `npm run migrate:legacy-owners -- --owner-id <owner-id> --dry-run` 预览，再去掉 `--dry-run` 完成一次性迁移。
+
+当前文件存储实现通过 `data/.venture-lens.lock` 强制单实例运行。SSE 订阅、任务控制器和创建去重均是进程内状态；在引入具备租约的持久化任务队列、共享事件总线和支持并发写入的数据库前，不支持多实例或滚动双写部署。
+
+设置 `DATA_RETENTION_DAYS` 后，超过期限的终态任务、已删除对话、历史报告版本和日志会先移入 `data/retention-trash/YYYYMMDD/`，经过 `DATA_RETENTION_GRACE_DAYS` 后再自动删除。默认值 `0` 禁用自动清理，生产环境应按数据治理要求显式配置。
 
 ## 项目结构
 
@@ -190,6 +210,7 @@ npm run dev          # watch 模式启动
 npm run check:syntax # JS/MJS 语法检查
 npm run lint         # 源码风格和冲突标记检查
 npm test             # 全部单元测试
+npm run test:e2e     # Chrome/Playwright 冒烟测试（SSE、并发、上传边界）
 npm run check        # 完整本地检查
 ```
 
@@ -198,6 +219,8 @@ npm run check        # 完整本地检查
 ## 部署
 
 仓库提供 `npm run deploy:remote`，用于项目维护者的受控服务器部署。脚本要求：
+
+- 必须从本机环境显式提供 `REMOTE_HOST`、`SSH_KEY`、`REMOTE_DIR`、`REMOTE_BACKUP_DIR`、`PORT`、`REMOTE_BIND_HOST`、`SERVICE_USER` 与 `SERVICE_GROUP`；仓库不包含生产基础设施默认值。systemd 模板由部署脚本填充，Nginx 示例中的 `__...__` 需由部署环境替换。
 
 - 当前分支是 `main`，工作树干净，且 `HEAD` 与 `origin/main` 完全一致。
 - 远端使用独立 `.env`，其中包含唯一的 `DEEPSEEK_API_KEY` 和 `PUBLIC_BASE_URL`。

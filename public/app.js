@@ -321,7 +321,7 @@ async function loadReview(id) {
     if (review.report && review.reanalysisInProgress) showPreviousReportDuringReanalysis(review);
     else if (review.report) completeReport({ report: review.report, quality: review.quality, status: review.status, sources: review.sources, followupSuggestions: review.followupSuggestions });
     evidenceRefreshController.render(review);
-    for (const message of review.messages || []) renderChatMessage(message.role, message.content);
+    for (const message of review.messages || []) renderChatMessage(message.role, message.content, false, message.status);
     if (["queued", "running"].includes(review.status) || isEvidenceRefreshActive(review.evidenceRefresh)) connectEvents(id);
     if (review.error) showError(review.error);
     elements.conversationTitle.textContent = localizedReviewTitle(review);
@@ -429,13 +429,17 @@ function renderReportContent(markdown, streaming, quality) {
   scrollBottom();
 }
 
-function renderChatMessage(role, content, streaming = false) {
+function renderChatMessage(role, content, streaming = false, status = "complete") {
   const article = document.createElement("article");
   article.className = `message ${role === "user" ? "user" : "assistant"}`;
   article.innerHTML = `<div class="message-meta"><span class="avatar">${role === "user" ? t("message.you", { zh: "你" }) : "VL"}</span>${role === "user" ? t("message.followup", { zh: "你的追问" }) : t("progress.agent", { zh: "研究代理" })}</div>`;
   const body = document.createElement("div");
   body.className = role === "user" ? "message-body" : `assistant-card chat-answer-card report-content${streaming ? " stream-cursor streaming-plain" : ""}`;
   body.innerHTML = markdownToHtml(content);
+  if (role === "assistant" && status === "incomplete") {
+    body.insertAdjacentHTML("beforeend", `<blockquote>${escapeHtml(t("followup.draftSaved", { zh: "上次回答未完成，已保存为草稿，可重新提问。" }))}</blockquote>`);
+    article.classList.add("incomplete");
+  }
   article.append(body);
   elements.messageStream.append(article);
   scrollBottom();

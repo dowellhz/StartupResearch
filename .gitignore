@@ -7,6 +7,8 @@ data/pdfs/
 data/deleted-conversations/
 tmp/
 output/
+test-results/
+playwright-report/
 !data/jobs/.gitkeep
 !data/reports/.gitkeep
 !data/uploads/.gitkeep

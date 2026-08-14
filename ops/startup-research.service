@@ -5,12 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=nlvcadmin
-Group=nlvcadmin
-WorkingDirectory=/home/nlvcadmin/startup-research
+User=__SERVICE_USER__
+Group=__SERVICE_GROUP__
+WorkingDirectory=__REMOTE_DIR__
 Environment=NODE_ENV=production
-EnvironmentFile=/home/nlvcadmin/startup-research/.env
-ExecStart=/usr/bin/node /home/nlvcadmin/startup-research/server.mjs
+EnvironmentFile=__REMOTE_DIR__/.env
+ExecStart=/usr/bin/node __REMOTE_DIR__/server.mjs
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=30
@@ -18,7 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=read-only
 ProtectSystem=full
-ReadWritePaths=/home/nlvcadmin/startup-research/data
+ReadWritePaths=__REMOTE_DIR__/data
 
 [Install]
 WantedBy=multi-user.target
