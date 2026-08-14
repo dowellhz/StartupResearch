@@ -207,12 +207,15 @@ scripts/            工程检查和远程部署脚本
 
 ```bash
 npm run dev          # watch 模式启动
+npm run build:public # 将前端源模块构建为带版本哈希的生产 bundle
 npm run check:syntax # JS/MJS 语法检查
 npm run lint         # 源码风格和冲突标记检查
 npm test             # 全部单元测试
 npm run test:e2e     # Chrome/Playwright 冒烟测试（SSE、并发、上传边界）
 npm run check        # 完整本地检查
 ```
+
+生产启动会从 `public/assets/manifest.json` 注入版本化的 JS/CSS 地址，并对这些构建产物发送一年 `immutable` 缓存；开发环境继续直接加载 `public/` 源模块，便于 watch 调试。`npm run check` 和远程部署流程会自动重建并校验生产资源。
 
 提交信息使用 Conventional Commits：`<type>(<scope>): <subject>`。
 

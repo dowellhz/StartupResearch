@@ -1,5 +1,6 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
 import { bindComposerInput } from "./composer-keyboard.js";
+import { scheduleAfterFirstPaint } from "./boot-scheduler.js";
 import { createComposerDraftController, lastUserInput } from "./composer-draft.js";
 import { ATTACHMENT_SUBMISSION, CANCEL_SUBMISSION, COMPANY_RESEARCH_SUBMISSION, CONFIRM_COMPANY_RESEARCH_SUBMISSION, decideComposerSubmission, FOLLOWUP_SUBMISSION, INDUSTRY_RESEARCH_SUBMISSION, PAPER_ANALYSIS_SUBMISSION } from "./composer-submit-route.js";
 import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, INDUSTRY_RESEARCH, PAPER_ANALYSIS, createComposerTaskModeController, taskTypeForFileInput } from "./composer-task-mode.js";
@@ -106,12 +107,15 @@ const reanalyzeCurrentReview = createReanalyzeController({ state, requestJson, r
   focusResearchStart: focusCurrentResearchStart, notify: toast, labelFor: taskTypeLabels, confirmImpl: window.confirm.bind(window), disableButton: () => document.querySelector("[data-reanalyze]")?.setAttribute("disabled", "") });
 boot();
 
-async function boot() {
+function boot() {
   applyDocumentTranslations();
   taskMode.selectAttachmentMode();
   bindEvents();
   draft.restore();
-  await Promise.all([refreshHealthStatus({ requestJson, modelDot: elements.modelDot, modelText: elements.modelText }), loadHistory()]);
+  scheduleAfterFirstPaint(() => {
+    void refreshHealthStatus({ requestJson, modelDot: elements.modelDot, modelText: elements.modelText });
+    void loadHistory();
+  });
 }
 function bindEvents() {
   taskMode.bind();

@@ -1,6 +1,5 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnvFile, getRuntimeConfig } from "./src/config/runtime-config.js";
@@ -30,6 +29,7 @@ import { createPdfWorkerExtractionService } from "./src/infra/pdf-worker-extract
 import { createJsonlLogger } from "./src/infra/jsonl-logger.js";
 import { acquireProcessLease } from "./src/infra/process-lease.js";
 import { publicError } from "./src/infra/public-error.js";
+import { createPublicAssetService } from "./src/infra/public-asset-service.js";
 import { createRateLimiter, requestClientKey } from "./src/infra/rate-limiter.js";
 import { createStructuredResearchToolService } from "./src/infra/research-tools/structured-research-tool-service.js";
 import { sanitizeVisibleFilename } from "./public/privacy-redaction.js";
@@ -70,6 +70,7 @@ const manager = createReviewManagerService({
 const browserSessions = createBrowserSessionService();
 const googleAuth = createGoogleAuthService({ config: config.auth.google });
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
+const publicAssets = await createPublicAssetService({ publicDir, useManifest: config.production });
 const generalRateLimiter = createRateLimiter({ windowMs: config.security.requestWindowMs, max: config.security.requestLimit });
 const expensiveRateLimiter = createRateLimiter({ windowMs: config.security.requestWindowMs, max: config.security.expensiveRequestLimit });
 const usageBudget = createFileUsageBudget({ dataDir: config.dataDir, ownerDailyLimit: config.security.ownerDailyCostUnits, globalDailyLimit: config.security.globalDailyCostUnits });
@@ -181,7 +182,7 @@ async function route(req, res) {
     if (req.method === "DELETE" && !action) return json(res, 200, { ok: true, result: await manager.deleteConversation(id, { ownerId }) });
     if (req.method === "GET" && !action) return json(res, 200, { ok: true, review: await manager.get(id, { ownerId }) });
   }
-  if (req.method === "GET") return serveStatic(res, url.pathname);
+  if (req.method === "GET") return publicAssets.serve(res, url.pathname);
   json(res, 404, { ok: false, error: "Not found" });
 }
 
@@ -278,26 +279,6 @@ async function downloadConversationPdf(res, id, ownerId) {
   res.end(buffer);
 }
 
-async function serveStatic(res, pathname) {
-  const relative = pathname === "/" ? "index.html" : decodeURIComponent(pathname).replace(/^\/+/, "");
-  const target = path.resolve(publicDir, relative);
-  if (!target.startsWith(`${publicDir}${path.sep}`) && target !== path.join(publicDir, "index.html")) {
-    return json(res, 403, { ok: false, error: "Forbidden" });
-  }
-  try {
-    if (!(await stat(target)).isFile()) throw Object.assign(new Error("Not found"), { code: "ENOENT" });
-    const content = await readFile(target);
-    res.writeHead(200, {
-      "Content-Type": mimeType(target),
-      "Cache-Control": /\.(?:html|js|css)$/.test(target) ? "no-cache" : "public, max-age=3600"
-    });
-    res.end(content);
-  } catch (error) {
-    if (error.code === "ENOENT") return json(res, 404, { ok: false, error: "Not found" });
-    throw error;
-  }
-}
-
 function redirect(res, location) {
   res.writeHead(302, { Location: location || "/", "Cache-Control": "no-store" });
   res.end();
@@ -364,10 +345,6 @@ function json(res, status, value) {
   const body = Buffer.from(JSON.stringify(value));
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": body.length });
   res.end(body);
-}
-
-function mimeType(file) {
-  return ({ ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" })[path.extname(file)] || "application/octet-stream";
 }
 
 function safeFilename(value) {

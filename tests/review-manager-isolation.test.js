@@ -27,6 +27,24 @@ test("review manager hides jobs, reports, and owner identifiers across browsers"
   );
 });
 
+test("history listing uses repository summaries without hydrating checkpoint artifacts", async () => {
+  const ownerId = `anon_${"h".repeat(43)}`;
+  let summaryCalls = 0;
+  const repository = {
+    listSummaries: async ({ ownerId: selected }) => {
+      assert.equal(selected, ownerId);
+      summaryCalls += 1;
+      return [{ id: "bp_history_summary", ownerId, companyName: "轻量历史", status: "completed", taskType: "attachment_review", updatedAt: "2026-08-14T00:00:00.000Z" }];
+    },
+    list: async () => { throw new Error("full job hydration must not run for history"); }
+  };
+  const manager = createReviewManagerService({ pipeline: { steps: [] }, repository, model: {} });
+  const reviews = await manager.list({ ownerId });
+  assert.equal(summaryCalls, 1);
+  assert.equal(reviews[0].id, "bp_history_summary");
+  assert.equal("ownerId" in reviews[0], false);
+});
+
 test("legacy unowned job stays quarantined from every browser", async () => {
   const ownerId = `anon_${"d".repeat(43)}`;
   let job = { id: "bp_legacy", status: "completed", reportAvailable: false, checkpoints: {}, upload: { filename: "legacy.pdf" } };
