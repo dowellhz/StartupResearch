@@ -16,7 +16,8 @@ const app = spawn(process.execPath, ["server.mjs"], {
   stdio: "inherit",
   env: {
     ...process.env,
-    NODE_ENV: "test",
+    NODE_ENV: "production",
+    ALLOW_ANONYMOUS_PRODUCTION: "true",
     HOST: "127.0.0.1",
     PORT: String(appPort),
     DATA_DIR: dataDir,

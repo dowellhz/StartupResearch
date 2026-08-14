@@ -328,7 +328,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
 
   async function list({ ownerId } = {}) {
     assertOwnerId(ownerId);
-    return (await repository.list({ ownerId })).map(publicJob);
+    const jobs = typeof repository.listSummaries === "function" ? await repository.listSummaries({ ownerId }) : await repository.list({ ownerId });
+    return jobs.map(publicJob);
   }
 
   async function ask(id, question, { onDelta, onStatus, onProgress, ownerId, signal } = {}) {

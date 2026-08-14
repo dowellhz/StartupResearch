@@ -1,4 +1,5 @@
 import { t } from "./i18n.js";
+import { scheduleAfterFirstPaint } from "./boot-scheduler.js";
 import { requestJson } from "./http-client.js";
 
 const slot = document.querySelector("#googleAuthSlot");
@@ -10,7 +11,7 @@ const logout = document.querySelector("#googleLogoutButton");
 const secureLabel = document.querySelector("#secureLabelText");
 const helpText = document.querySelector("#privacyHelpText");
 
-void initialize();
+scheduleAfterFirstPaint(() => void initialize());
 
 async function initialize() {
   try {

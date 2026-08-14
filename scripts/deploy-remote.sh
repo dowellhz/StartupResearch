@@ -65,6 +65,7 @@ DEPLOY_COMMIT="$(git rev-parse HEAD)"
 
 log "Running release checks"
 npm run check
+[ -z "$(git status --porcelain --untracked-files=normal)" ] || fail "generated public assets changed during checks; run npm run build:public and commit them before deployment"
 
 SSH_OPTS=(-i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 remote() {

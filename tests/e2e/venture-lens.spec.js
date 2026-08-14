@@ -1,5 +1,19 @@
 import { test, expect } from "@playwright/test";
 
+test("production shell loads only versioned immutable bundles", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#emptyHeading")).toBeVisible();
+  const resources = await page.evaluate(() => performance.getEntriesByType("resource").map((entry) => entry.name));
+  const scripts = resources.filter((url) => /\.js(?:\?|$)/.test(url));
+  const styles = resources.filter((url) => /\.css(?:\?|$)/.test(url));
+  expect(scripts.length).toBeLessThanOrEqual(3);
+  expect(scripts.every((url) => url.includes("/assets/") && url.includes("?v=") || /chunk-[A-Z0-9]+\.js$/.test(url))).toBe(true);
+  expect(styles).toHaveLength(1);
+  expect(styles[0]).toContain("/assets/styles.css?v=");
+  const response = await page.request.get(styles[0]);
+  expect(response.headers()["cache-control"]).toBe("public, max-age=31536000, immutable");
+});
+
 test("real browser completes a review and persists an interrupted SSE follow-up draft", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#emptyHeading")).toContainText(/business plan|商业计划书/i);

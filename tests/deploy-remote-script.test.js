@@ -24,6 +24,7 @@ test("remote deploy protects runtime state and credentials", () => {
   assert.match(script, /REMOTE_BIND_HOST is required/);
   assert.match(script, /SERVICE_USER is required/);
   assert.match(script, /__REMOTE_DIR__/);
+  assert.match(script, /generated public assets changed during checks/);
   assert.doesNotMatch(script, /nlvcadmin/);
   assert.doesNotMatch(script, /57\.158\.28\.133/);
   assert.doesNotMatch(script, /\/Users\/linlu\/Downloads/);
