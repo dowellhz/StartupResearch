@@ -15,6 +15,7 @@
     "test": "node --test tests/*.test.js",
     "test:e2e": "playwright test",
     "check": "npm run build:public && npm run check:syntax && npm run lint && npm test",
+    "research:history": "node scripts/list-research-history.mjs",
     "migrate:legacy-owners": "node scripts/migrate-legacy-owners.mjs",
     "deploy:remote": "./scripts/deploy-remote.sh"
   },
