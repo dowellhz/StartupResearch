@@ -213,9 +213,12 @@ npm run lint         # 源码风格和冲突标记检查
 npm test             # 全部单元测试
 npm run test:e2e     # Chrome/Playwright 冒烟测试（SSE、并发、上传边界）
 npm run check        # 完整本地检查
+npm run research:history -- --data-dir data # 按时间汇总当前与归档研究任务
 ```
 
 生产启动会从 `public/assets/manifest.json` 注入版本化的 JS/CSS 地址，并对这些构建产物发送一年 `immutable` 缓存；开发环境继续直接加载 `public/` 源模块，便于 watch 调试。`npm run check` 和远程部署流程会自动重建并校验生产资源。
+
+研究历史脚本默认输出 Markdown，并包含当前任务、已删除归档和保留期回收区；可使用 `--current-only` 只看当前任务，或使用 `--format json` 输出脱敏 JSON。脚本不会输出 owner ID、上传内容或报告正文。
 
 提交信息使用 Conventional Commits：`<type>(<scope>): <subject>`。
 
