@@ -32,18 +32,27 @@ test("shared reviews become idempotent independent copies with isolated follow-u
     save: async (share) => { shares.set(share.id, share); return share; },
     get: async (id) => shares.get(id) || null
   };
+  const shareIds = [`share_${"s".repeat(32)}`, `share_${"t".repeat(32)}`];
+  const reviewIds = ["copy_recipient_one", "copy_recipient_two", "copy_recipient_three"];
   const service = createReviewShareService({
     repository, shareRepository, now: () => "2026-08-24T10:00:00.000Z",
-    createShareId: () => `share_${"s".repeat(32)}`, createReviewId: () => "copy_recipient_review"
+    createShareId: () => shareIds.shift(), createReviewId: () => reviewIds.shift()
   });
 
   const { id: shareId } = await service.create(source.id, { ownerId: sourceOwner });
-  const first = await service.importReview(shareId, { ownerId: recipientOwner });
+  const { id: alternateShareId } = await service.create(source.id, { ownerId: sourceOwner });
+  const [first, alternate] = await Promise.all([
+    service.importReview(shareId, { ownerId: recipientOwner }),
+    service.importReview(alternateShareId, { ownerId: recipientOwner })
+  ]);
   const second = await service.importReview(shareId, { ownerId: recipientOwner });
 
   assert.equal(first.imported, true);
   assert.equal(second.imported, false);
+  assert.equal(alternate.imported, false);
   assert.equal(second.review.id, first.review.id);
+  assert.equal(alternate.review.id, first.review.id);
+  assert.equal(first.review.shared, true);
   assert.equal(first.review.ownerId, undefined);
   assert.equal(first.review.shareOrigin, undefined);
   assert.equal(reports.get(first.review.id), "# 原报告");
@@ -52,9 +61,24 @@ test("shared reviews become idempotent independent copies with isolated follow-u
 
   const recipient = jobs.get(first.review.id);
   recipient.messages.push({ id: "msg_recipient", role: "user", content: "接收方后续问题" });
+  recipient.shareOrigin.forkedAt = "2026-08-24T10:01:00.000Z";
+  recipient.shareOrigin.forkReason = "followup";
   await repository.save(recipient);
   assert.deepEqual(jobs.get(source.id).messages, source.messages);
   assert.equal(jobs.get(first.review.id).messages.length, 2);
+
+  const afterFork = await service.importReview(shareId, { ownerId: recipientOwner });
+  assert.equal(afterFork.imported, true);
+  assert.notEqual(afterFork.review.id, first.review.id);
+  assert.equal(afterFork.review.shared, true);
+  assert.equal((await service.importReview(alternateShareId, { ownerId: recipientOwner })).review.id, afterFork.review.id);
+
+  const changedSource = jobs.get(source.id);
+  changedSource.messages.push({ id: "msg_new_source", role: "assistant", content: "源对话的新内容", status: "complete" });
+  await repository.save(changedSource);
+  const newerVersion = await service.importReview(shareId, { ownerId: recipientOwner });
+  assert.equal(newerVersion.imported, true);
+  assert.notEqual(newerVersion.review.id, afterFork.review.id);
 });
 
 test("only owners can create shares and running snapshots are rejected", async () => {

@@ -323,7 +323,14 @@ function indexRecord(job) {
     evidenceRefresh: job.evidenceRefresh ? { status: job.evidenceRefresh.status } : null,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
-    completedAt: job.completedAt
+    completedAt: job.completedAt,
+    shareOrigin: job.shareOrigin ? {
+      sourceReviewId: job.shareOrigin.sourceReviewId,
+      sourceVersion: job.shareOrigin.sourceVersion,
+      importedAt: job.shareOrigin.importedAt,
+      forkedAt: job.shareOrigin.forkedAt,
+      forkReason: job.shareOrigin.forkReason
+    } : null
   };
 }
 

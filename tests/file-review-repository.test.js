@@ -73,3 +73,16 @@ test("indexed list reads only selected job files and legacy ownership requires e
   assert.equal(await repository.assignUnowned("owner-b"), 1);
   assert.equal((await repository.get("bp_old_job")).ownerId, "owner-b");
 });
+
+test("indexed summaries retain internal share state for the public shared badge", async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "venture-lens-share-index-"));
+  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const repository = createFileReviewRepository({ dataDir });
+  await repository.save({
+    id: "copy_shared_index", ownerId: "owner-a", status: "completed", checkpoints: {},
+    shareOrigin: { sourceReviewId: "bp_source_index", sourceVersion: "v1", importedAt: "before", forkedAt: "", forkReason: "" }
+  });
+  const [summary] = await repository.listSummaries({ ownerId: "owner-a" });
+  assert.equal(summary.shareOrigin.sourceReviewId, "bp_source_index");
+  assert.equal(summary.shareOrigin.sourceVersion, "v1");
+});

@@ -67,7 +67,8 @@ test("reanalyze archives the visible report and resets checkpoints while retaini
     reportAvailable: true,
     checkpoints: { old: { completed: true } },
     stages: [],
-    upload: { filename: "watermarked.pdf", persisted: true }
+    upload: { filename: "watermarked.pdf", persisted: true },
+    shareOrigin: { sourceReviewId: "bp_source", sourceVersion: "v1", importedAt: "before", forkedAt: "" }
   };
   let archived = false;
   const repository = {
@@ -88,6 +89,8 @@ test("reanalyze archives the visible report and resets checkpoints while retaini
   assert.equal("previousAnalysisSnapshot" in result, false);
   assert.equal(job.previousAnalysisSnapshot, null);
   assert.equal(job.ownerId, ownerId);
+  assert.equal(result.shared, false);
+  assert.equal(job.shareOrigin.forkReason, "reanalyze");
 });
 
 test("replacing a BP stores one internal comparison snapshot without exposing raw analysis", async () => {
@@ -261,7 +264,7 @@ test("AI decides whether a follow-up needs Agentic Search", async () => {
 
 test("manual evidence refresh is owner-scoped and hides internal refresh checkpoints", async () => {
   const ownerId = `anon_${"f".repeat(43)}`;
-  let job = { id: "bp_refresh", ownerId, status: "completed", reportAvailable: true, checkpoints: {}, upload: { filename: "bp.pdf" } };
+  let job = { id: "bp_refresh", ownerId, status: "completed", reportAvailable: true, checkpoints: {}, upload: { filename: "bp.pdf" }, shareOrigin: { sourceReviewId: "bp_source", sourceVersion: "v1", importedAt: "before", forkedAt: "" } };
   const repository = {
     get: async () => job,
     save: async (value) => { job = value; return value; }
@@ -275,13 +278,15 @@ test("manual evidence refresh is owner-scoped and hides internal refresh checkpo
   assert.equal(result.evidenceRefresh.id, "refresh_123456");
   assert.equal(result.evidenceRefresh.checkpointCount, 1);
   assert.equal("checkpoints" in result.evidenceRefresh, false);
+  assert.equal(result.shared, false);
+  assert.equal(job.shareOrigin.forkReason, "evidence_refresh");
   await assert.rejects(manager.refreshEvidence("bp_refresh", { ownerId }), /正在刷新/);
   await assert.rejects(manager.refreshEvidence("bp_refresh", { ownerId: `anon_${"z".repeat(43)}` }), /未找到/);
 });
 
 test("an interrupted follow-up keeps the user question and partial assistant draft", async () => {
   const ownerId = `anon_${"q".repeat(43)}`;
-  let job = { id: "bp_followup_draft", ownerId, companyName: "示例", status: "completed", reportAvailable: true, checkpoints: {}, messages: [] };
+  let job = { id: "bp_followup_draft", ownerId, companyName: "示例", status: "completed", reportAvailable: true, checkpoints: {}, messages: [], shareOrigin: { sourceReviewId: "bp_source", sourceVersion: "v1", importedAt: "before", forkedAt: "" } };
   const repository = {
     get: async () => job,
     getReport: async () => "# 报告",
@@ -297,6 +302,8 @@ test("an interrupted follow-up keeps the user question and partial assistant dra
   await assert.rejects(manager.ask("bp_followup_draft", "请继续分析", { ownerId }), /socket/);
   assert.deepEqual(job.messages.map((message) => [message.role, message.status]), [["user", "complete"], ["assistant", "incomplete"]]);
   assert.equal(job.messages[1].content, "已生成一半");
+  assert.equal(job.shareOrigin.forkReason, "followup");
+  assert.ok(job.shareOrigin.forkedAt);
 });
 
 test("owner active-task capacity rejects additional expensive work with 429", async () => {

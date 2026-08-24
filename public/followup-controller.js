@@ -1,11 +1,12 @@
 import { createFollowupProgressCard } from "./followup-progress.js";
 
-export async function runFollowup({ question, currentId, messageStream, requestResponse, renderUser, draft, setBusy, scrollBottom }) {
+export async function runFollowup({ question, currentId, messageStream, requestResponse, renderUser, draft, setBusy, scrollBottom, onAccepted = () => {} }) {
   renderUser(question);
   draft.save();
   setBusy(true);
   const card = createFollowupProgressCard(messageStream, { onRender: scrollBottom });
   let answer = "";
+  let accepted = false;
   try {
     const response = await requestResponse(`/api/reviews/${currentId}/messages`, {
       method: "POST",
@@ -15,6 +16,7 @@ export async function runFollowup({ question, currentId, messageStream, requestR
     if (!response.ok) throw new Error("追问失败");
     draft.clearPrompt();
     await readEventStream(response, (event) => {
+      if (!accepted && ["progress", "status", "delta", "done"].includes(event.type)) { accepted = true; onAccepted(); }
       if (event.type === "progress") card.update(event.data);
       if (event.type === "delta") { answer += event.data.delta || ""; card.append(event.data.delta); }
       if (event.type === "done") { answer = event.data.answer || answer; card.complete(answer); }

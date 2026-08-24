@@ -9,7 +9,7 @@ export function renderHistoryList({ container, reviews, currentId, requestJson, 
   container.innerHTML = reviews.map((review) => `
     <div class="history-row ${review.id === currentId ? "active" : ""}">
       <button class="history-item" data-review-id="${escapeHtml(review.id)}">
-        <strong>${escapeHtml(review.companyName || t("history.unnamed", { zh: "未命名公司" }))}</strong>
+        <strong><span class="history-name">${escapeHtml(review.companyName || t("history.unnamed", { zh: "未命名公司" }))}</span>${historySharedBadge(review)}</strong>
         <span><i class="history-status ${escapeHtml(review.status)}"></i>${statusLabel(review.status, review.taskType)} · ${relativeDate(review.updatedAt)}</span>
       </button>
       <button class="history-delete" data-delete-id="${escapeHtml(review.id)}" aria-label="${escapeHtml(t("history.delete", { zh: "删除对话" }))}" title="${escapeHtml(t("history.deleteTitle", { zh: "删除对话，保留附件" }))}">×</button>
@@ -30,6 +30,10 @@ export function renderHistoryList({ container, reviews, currentId, requestJson, 
       notify(error.message);
     }
   }));
+}
+
+export function historySharedBadge(review) {
+  return review?.shared ? `<i class="history-shared">${escapeHtml(t("history.shared", { zh: "共享" }))}</i>` : "";
 }
 
 function relativeDate(value) {

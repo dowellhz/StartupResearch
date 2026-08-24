@@ -48,8 +48,10 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .history-delete { width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: #938e85; cursor: pointer; font-size: 19px; opacity: 0; transition: .18s; }
 .history-row:hover .history-delete, .history-delete:focus-visible { opacity: 1; }
 .history-delete:hover { background: #f4dfd8; color: var(--accent-dark); }
-.history-item strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
-.history-item span { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.history-item strong { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; font-weight: 600; }
+.history-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-shared { flex: 0 0 auto; padding: 1px 5px; border-radius: 5px; background: #f1dfd8; color: var(--accent-dark); font-size: 9px; font-style: normal; font-weight: 750; }
+.history-item > span { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
 .history-status { width: 6px; height: 6px; border-radius: 50%; background: #aba69d; display: inline-block; margin-right: 5px; }
 .history-status.completed { background: var(--green); }
 .history-status.running, .history-status.queued { background: var(--accent); box-shadow: 0 0 0 3px rgba(185,87,61,.12); }

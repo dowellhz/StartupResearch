@@ -355,7 +355,8 @@ async function loadReview(id) {
 async function askFollowup(question) {
   if (!question) return toast(t("validation.question", { zh: "请输入问题" }));
   await runFollowup({ question, currentId: state.currentId, messageStream: elements.messageStream, requestResponse,
-    renderUser: (value) => renderChatMessage("user", value), draft, setBusy, scrollBottom });
+    renderUser: (value) => renderChatMessage("user", value), draft, setBusy, scrollBottom,
+    onAccepted: () => { state.currentReview = { ...state.currentReview, shared: false }; void loadHistory(); } });
 }
 
 async function askSuggestedFollowup(question) {

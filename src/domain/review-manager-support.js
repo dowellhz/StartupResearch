@@ -5,6 +5,7 @@ export function publicJob(job) {
   const { upload, checkpoints, ownerId, previousReportArchive, previousAnalysisSnapshot, analysis, evidenceRefresh, shareOrigin, ...safe } = job;
   return {
     ...safe,
+    shared: Boolean(shareOrigin && !shareOrigin.forkedAt),
     taskType: taskTypeOf(job),
     upload: upload ? { filename: upload.filename, mimeType: upload.mimeType, size: upload.size } : null,
     checkpointCount: Object.keys(checkpoints || {}).length,

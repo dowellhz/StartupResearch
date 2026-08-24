@@ -7,6 +7,7 @@ import { normalizeReviewReport } from "./report-summary-service.js";
 import { normalizeOutputLanguage } from "./report-language.js";
 import { createSpecialResearchTaskService, INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./special-research-task-service.js";
 import { transitionReview } from "./review-state-machine.js";
+import { forkSharedReview } from "./review-share-state.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
 import { operationalError, safePipelineFailure } from "../infra/public-error.js";
 import {
@@ -14,7 +15,6 @@ import {
   normalizeComparable, normalizeInstruction, publicJob, recoverableRestartKey,
   resetPipelineFrom, taskTypeOf
 } from "./review-manager-support.js";
-
 export function createReviewManagerService({ pipeline, companyResearchPipeline, industryResearchPipeline, paperAnalysisPipeline, repository, model, evidenceRefreshService, taskQueue = { run: (task) => task() }, maxActivePerOwner = 3, logger = {}, now = () => new Date().toISOString() }) {
   const subscribers = new Map();
   const controllers = new Map();
@@ -122,7 +122,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
       const selectedPipeline = pipelineFor(existing);
       const restartKey = recoverableRestartKey(existing);
       await repository.removePdf?.(id, existing.pdfStoragePath);
-      const resumed = resetPipelineFrom(transitionReview(existing, "running"), selectedPipeline.steps, restartKey);
+      const resumed = resetPipelineFrom(transitionReview(forkSharedReview(existing, "retry", now()), "running"), selectedPipeline.steps, restartKey);
       const saved = await repository.save({ ...resumed, error: "", failedStep: "", pdfStoragePath: "" });
       enqueueRun(id);
       await logger.audit?.("review.retried", { jobId: id, ownerId });
@@ -142,7 +142,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
       }
       const archivedReport = await repository.archiveReport?.(id);
       await repository.removePdf?.(id, existing.pdfStoragePath);
-      const resumed = transitionReview(existing, "running");
+      const resumed = transitionReview(forkSharedReview(existing, "reanalyze", now()), "running");
       const job = await repository.save({
         ...resumed,
         outputLanguage: outputLanguage ? normalizeOutputLanguage(outputLanguage) : existing.outputLanguage || "zh",
@@ -174,7 +174,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
       const archivedReport = await repository.archiveReport?.(id);
       await repository.removePdf?.(id, existing.pdfStoragePath);
       const previousAnalysisSnapshot = buildPreviousAnalysisSnapshot(existing);
-      const resumed = transitionReview(existing, "running");
+      const resumed = transitionReview(forkSharedReview(existing, "replace_bp", now()), "running");
       const messages = [
         ...(existing.messages || []),
         { role: "user", content: `上传同一公司的新版 BP：${upload.filename}${instruction ? `\n${instruction}` : ""}`, at: now() }
@@ -283,7 +283,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     const release = await reserveOwnerCapacity(ownerId);
     try {
       const evidenceRefresh = evidenceRefreshService.createRefresh();
-      const job = await repository.save({ ...existing, evidenceRefresh });
+      const job = await repository.save({ ...forkSharedReview(existing, "evidence_refresh", now()), evidenceRefresh });
       queueMicrotask(() => runEvidenceRefresh(id).catch((error) => logger.error?.("review.refresh_failed", { jobId: id, error })));
       await logger.audit?.("review.evidence_refresh_started", { jobId: id, ownerId });
       return publicJob(job);
@@ -340,7 +340,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     if (!text) throw new Error("问题不能为空");
     const history = Array.isArray(job.messages) ? job.messages : [];
     const userMessage = { id: messageId(), role: "user", content: text, status: "complete", at: now() };
-    await appendMessage(id, userMessage);
+    await appendMessage(id, userMessage, { forkReason: "followup" });
     let partialAnswer = "";
     let researchSources = [];
     let researchWarning = "";
@@ -470,10 +470,11 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     try { return await operation(); } finally { release(); }
   }
 
-  async function appendMessage(id, message) {
+  async function appendMessage(id, message, { forkReason = "" } = {}) {
     const latest = await requireJob(id);
     const messages = [...array(latest.messages).filter((item) => item.id !== message.id), message].slice(-20);
-    await repository.save({ ...latest, messages });
+    const review = forkReason ? forkSharedReview(latest, forkReason, now()) : latest;
+    await repository.save({ ...review, messages });
   }
 
   function enqueueRun(id) {
@@ -482,7 +483,6 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
 
   return { ask, create, deleteConversation, failInterrupted, get, list, reanalyze, refreshEvidence, replaceBp, retry, run, runEvidenceRefresh, subscribe };
 }
-
 function followupProgress(key, label, status, message) { return { key, label, status, message }; }
 
 function messageId() { return `msg_${randomUUID().replace(/-/g, "").slice(0, 20)}`; }

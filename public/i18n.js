@@ -79,6 +79,7 @@ const EN = Object.freeze({
   "confirm.start": "Start Company Research",
   "history.empty": "No research history",
   "history.unnamed": "Untitled research",
+  "history.shared": "Shared",
   "history.delete": "Delete conversation",
   "history.deleteTitle": "Delete conversation; retain attachment",
   "history.confirmDelete": "Delete this conversation?",

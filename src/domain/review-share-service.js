@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { assertOwnerId, publicJob } from "./review-manager-support.js";
+import { isPristineSharedReview, reviewContentVersion } from "./review-share-state.js";
 
 export function createReviewShareService({ repository, shareRepository, logger = {}, now = () => new Date().toISOString(), createShareId = defaultShareId, createReviewId = defaultReviewId }) {
   const pendingImports = new Map();
@@ -22,23 +23,27 @@ export function createReviewShareService({ repository, shareRepository, logger =
 
   async function importReview(shareId, { ownerId } = {}) {
     assertOwnerId(ownerId);
-    const key = `${ownerId}:${shareId}`;
-    if (pendingImports.has(key)) return pendingImports.get(key);
-    const promise = importOnce(shareId, ownerId).finally(() => pendingImports.delete(key));
+    const key = ownerId;
+    const previous = pendingImports.get(key) || Promise.resolve();
+    const promise = previous.catch(() => {}).then(() => importOnce(shareId, ownerId)).finally(() => {
+      if (pendingImports.get(key) === promise) pendingImports.delete(key);
+    });
     pendingImports.set(key, promise);
     return promise;
   }
 
   async function importOnce(shareId, ownerId) {
-    const existing = (await repository.list({ ownerId, limit: 10000 }))
-      .find((job) => job.shareOrigin?.shareId === shareId);
-    if (existing) return { review: publicJob(existing), imported: false };
-
     const share = await shareRepository.get(shareId);
     if (!share) throw notFound("分享链接无效或已失效");
     const source = await requireReview(share.sourceReviewId);
     const report = await repository.getReport(source.id);
     if (!String(report || "").trim()) throw notFound("分享的报告已不存在");
+    const sourceVersion = reviewContentVersion(source, report);
+    const existing = (await repository.list({ ownerId, limit: 10000 })).find((job) =>
+      isPristineSharedReview(job)
+      && job.shareOrigin.sourceReviewId === source.id
+      && job.shareOrigin.sourceVersion === sourceVersion);
+    if (existing) return { review: publicJob(existing), imported: false };
 
     const importedAt = now();
     const id = createReviewId();
@@ -54,7 +59,7 @@ export function createReviewShareService({ repository, shareRepository, logger =
       reportAvailable: true,
       createdAt: importedAt,
       updatedAt: importedAt,
-      shareOrigin: { shareId: share.id, sourceReviewId: source.id, importedAt },
+      shareOrigin: { shareId: share.id, sourceReviewId: source.id, sourceVersion, importedAt, forkedAt: "", forkReason: "" },
       previousReportArchive: ""
     });
     await logger.audit?.("review.share_imported", { jobId: id, ownerId, shareId: share.id });
