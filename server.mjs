@@ -14,6 +14,7 @@ import { createInvestmentAnalysisService } from "./src/domain/investment-analysi
 import { createLazyPdfService } from "./src/domain/lazy-pdf-service.js";
 import { createPaperAnalysisPipeline } from "./src/domain/paper-analysis-pipeline.js";
 import { createReviewManagerService } from "./src/domain/review-manager-service.js";
+import { createReviewShareService } from "./src/domain/review-share-service.js";
 import { createSemanticOverclaimService } from "./src/domain/semantic-overclaim-service.js";
 import { createTechnologyResearchToolService } from "./src/domain/technology-research-tool-service.js";
 import { recoverActiveReviews } from "./src/domain/startup-recovery-service.js";
@@ -34,6 +35,7 @@ import { createRateLimiter, requestClientKey } from "./src/infra/rate-limiter.js
 import { createStructuredResearchToolService } from "./src/infra/research-tools/structured-research-tool-service.js";
 import { sanitizeVisibleFilename } from "./public/privacy-redaction.js";
 import { createFileReviewRepository } from "./src/storage/file-review-repository.js";
+import { createFileShareRepository } from "./src/storage/file-share-repository.js";
 import { createFileUsageBudget } from "./src/storage/file-usage-budget.js";
 import { createDataRetentionService } from "./src/storage/data-retention-service.js";
 
@@ -43,6 +45,7 @@ const processLease = await acquireProcessLease({ dataDir: config.dataDir });
 const logger = createJsonlLogger({ dataDir: config.dataDir });
 const repository = createFileReviewRepository({ dataDir: config.dataDir });
 await repository.initialize();
+const shareRepository = createFileShareRepository({ dataDir: config.dataDir });
 const researchTools = createStructuredResearchToolService({ credentials: config.researchTools });
 const pdfExtractionQueue = createBoundedTaskQueue({ concurrency: config.documents.pdfConcurrency });
 const pdfExtractor = createPdfWorkerExtractionService({ timeoutMs: config.documents.pdfTimeoutMs, queue: pdfExtractionQueue });
@@ -67,6 +70,7 @@ const manager = createReviewManagerService({
   pipeline, companyResearchPipeline, industryResearchPipeline, paperAnalysisPipeline, repository, model,
   evidenceRefreshService: evidenceRefresh, taskQueue: researchTaskQueue, maxActivePerOwner: config.jobs.maxActivePerOwner, logger
 });
+const reviewShares = createReviewShareService({ repository, shareRepository, logger });
 const browserSessions = createBrowserSessionService();
 const googleAuth = createGoogleAuthService({ config: config.auth.google });
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
@@ -135,7 +139,7 @@ async function route(req, res) {
     });
   }
   if (googleAuth.required && !authenticatedSession) {
-    if (req.method === "GET" && ["/", "/index.html"].includes(url.pathname)) return googleAuth.begin(req, res, url);
+    if (req.method === "GET" && (["/", "/index.html"].includes(url.pathname) || /^\/share\//.test(url.pathname))) return googleAuth.begin(req, res, url);
     if (url.pathname.startsWith("/api/")) return json(res, 401, { ok: false, error: "需要使用 Google 账号登录", code: "google_auth_required" });
   }
   const cost = expensiveRequestCost(req.method, url.pathname);
@@ -165,7 +169,7 @@ async function route(req, res) {
     return json(res, 202, { ok: true, review });
   }
 
-  const match = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)(?:\/(events|pdf|conversation-pdf|messages|retry|reanalyze|refresh|company-match))?$/);
+  const match = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)(?:\/(events|pdf|conversation-pdf|messages|retry|reanalyze|refresh|company-match|share))?$/);
   if (match) {
     const [, id, action] = match;
     if (req.method === "GET" && action === "events") return streamReviewEvents(req, res, id, ownerId);
@@ -179,8 +183,18 @@ async function route(req, res) {
       return json(res, 202, { ok: true, review: await manager.reanalyze(id, { ownerId, outputLanguage: body.outputLanguage ? normalizeOutputLanguage(body.outputLanguage) : undefined }) });
     }
     if (req.method === "POST" && action === "refresh") return json(res, 202, { ok: true, review: await manager.refreshEvidence(id, { ownerId }) });
+    if (req.method === "POST" && action === "share") return json(res, 201, { ok: true, share: await reviewShares.create(id, { ownerId }) });
     if (req.method === "DELETE" && !action) return json(res, 200, { ok: true, result: await manager.deleteConversation(id, { ownerId }) });
     if (req.method === "GET" && !action) return json(res, 200, { ok: true, review: await manager.get(id, { ownerId }) });
+  }
+  const sharedMatch = url.pathname.match(/^\/api\/shares\/(share_[a-zA-Z0-9_-]{32,100})\/import$/);
+  if (req.method === "POST" && sharedMatch) {
+    const result = await reviewShares.importReview(sharedMatch[1], { ownerId });
+    const review = await manager.get(result.review.id, { ownerId });
+    return json(res, result.imported ? 201 : 200, { ok: true, review, imported: result.imported });
+  }
+  if (req.method === "GET" && /^\/share\/share_[a-zA-Z0-9_-]{32,100}$/.test(url.pathname)) {
+    return publicAssets.serve(res, "/index.html");
   }
   if (req.method === "GET") return publicAssets.serve(res, url.pathname);
   json(res, 404, { ok: false, error: "Not found" });

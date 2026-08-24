@@ -2,7 +2,7 @@ import { publicRefresh } from "./evidence-refresh-service.js";
 import { INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./special-research-task-service.js";
 
 export function publicJob(job) {
-  const { upload, checkpoints, ownerId, previousReportArchive, previousAnalysisSnapshot, analysis, evidenceRefresh, ...safe } = job;
+  const { upload, checkpoints, ownerId, previousReportArchive, previousAnalysisSnapshot, analysis, evidenceRefresh, shareOrigin, ...safe } = job;
   return {
     ...safe,
     taskType: taskTypeOf(job),

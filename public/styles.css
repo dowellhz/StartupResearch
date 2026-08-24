@@ -68,6 +68,10 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .workspace { position: relative; display: grid; grid-template-rows: 62px minmax(0, 1fr) auto; min-width: 0; min-height: 0; overflow: hidden; background: var(--paper); }
 .topbar { display: flex; align-items: center; border-bottom: 1px solid rgba(222,218,209,.72); padding: 0 28px; gap: 12px; background: rgba(247,245,240,.88); backdrop-filter: blur(16px); z-index: 5; }
 .conversation-title { font-size: 14px; font-weight: 620; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.top-share-button { height: 32px; display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; border: 1px solid #d5d0c7; border-radius: 9px; padding: 0 10px; background: rgba(255,255,255,.62); color: #625f59; font-size: 12px; font-weight: 650; cursor: pointer; transition: .18s ease; }
+.top-share-button svg { width: 16px; }
+.top-share-button:hover:not(:disabled) { border-color: #bdb5aa; background: #fff; color: var(--accent-dark); transform: translateY(-1px); }
+.top-share-button:disabled { opacity: .38; cursor: default; }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 16px; }
 .secure-label { color: var(--muted); display: flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: .05em; }
 .secure-label svg { width: 13px; }
@@ -276,6 +280,8 @@ dialog p:not(.eyebrow) { color: var(--muted); font-size: 14px; line-height: 1.8;
   .sidebar.open { transform: translateX(0); }
   .mobile-menu { display: grid; }
   .topbar { padding: 0 14px; }
+  .top-share-button { width: 34px; padding: 0; justify-content: center; }
+  .top-share-button span { display: none; }
   .secure-label { display: none; }
   .google-account > span { display: none; }
   .google-login > span:last-child { display: none; }

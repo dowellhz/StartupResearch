@@ -28,6 +28,8 @@ import { focusResearchStart } from "./research-view-focus.js";
 import { runFollowup } from "./followup-controller.js";
 import { renderStreamingMarkdown, STREAM_RENDER_INTERVAL } from "./streaming-markdown.js";
 import { localizedReviewTitle, supportsEvidenceRefresh, taskTypeLabels } from "./task-type-labels.js";
+import { createReviewShareController } from "./review-share-controller.js";
+import { createWorkspaceView } from "./workspace-view.js";
 const elements = {
   addMenu: document.querySelector("#addMenu"),
   attachButton: document.querySelector("#attachButton"),
@@ -73,14 +75,10 @@ const elements = {
   removeFile: document.querySelector("#removeFile"),
   researchPreview: document.querySelector("#researchPreview"),
   sendButton: document.querySelector("#sendButton"),
+  shareReviewButton: document.querySelector("#shareReviewButton"),
   sidebar: document.querySelector("#sidebar"),
   toastRegion: document.querySelector("#toastRegion")
 };
-const draft = createComposerDraftController({
-  companyInput: elements.companyInput,
-  promptInput: elements.promptInput,
-  onRestore: autoResize
-});
 const state = {
   currentId: "",
   currentReview: null,
@@ -92,6 +90,16 @@ const state = {
   researchFocusLock: false,
   taskType: ATTACHMENT_REVIEW
 };
+const { autoResize, isNearBottom, scrollBottom, toast } = createWorkspaceView({
+  conversation: elements.conversation, promptInput: elements.promptInput, toastRegion: elements.toastRegion, isAutoFollow: () => state.autoFollow
+});
+const draft = createComposerDraftController({
+  companyInput: elements.companyInput,
+  promptInput: elements.promptInput,
+  onRestore: autoResize
+});
+const shareController = createReviewShareController({ button: elements.shareReviewButton, requestJson, getReview: () => state.currentReview,
+  openReview: loadReview, refreshHistory: loadHistory, notify: toast });
 const taskMode = createComposerTaskModeController({ elements, state, clearAttachment: clearFile });
 const noAttachmentConfirmation = createConfirmationDialogController({ dialog: elements.noAttachmentDialog });
 const evidenceRefreshController = createEvidenceRefreshController({ state, container: elements.messageStream, requestJson,
@@ -114,11 +122,12 @@ function boot() {
   draft.restore();
   scheduleAfterFirstPaint(() => {
     void refreshHealthStatus({ requestJson, modelDot: elements.modelDot, modelText: elements.modelText });
-    void loadHistory();
+    void shareController.importFromLocation().then((imported) => imported || loadHistory());
   });
 }
 function bindEvents() {
   taskMode.bind();
+  shareController.bind();
   bindLanguageToggle({ button: elements.languageToggle });
   elements.fileInput.addEventListener("change", () => selectFile(elements.fileInput.files[0]));
   bindFileDrop({ dropZone: elements.composer, onFile: selectFile, onMultiple: () => toast(t("validation.oneFile", { zh: "一次只能上传一份 BP，已选择第一个文件" })) });
@@ -135,7 +144,7 @@ function bindEvents() {
   bindComposerInput({ textarea: elements.promptInput, form: elements.composer, submitButton: elements.sendButton, onInput: () => { autoResize(); draft.save(); } });
   elements.conversation.addEventListener("scroll", () => {
     if (state.researchFocusLock) return;
-    state.autoFollow = isNearConversationBottom();
+    state.autoFollow = isNearBottom();
   }, { passive: true });
   document.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -265,6 +274,7 @@ function handleTaskError(data) {
 function applySnapshot(review) {
   if (review.id && review.id !== state.currentId) return;
   state.currentReview = review;
+  shareController.sync(review);
   state.stages = review.stages || state.stages;
   renderProgressPanel();
   if (review.report && review.reanalysisInProgress) showPreviousReportDuringReanalysis(review);
@@ -294,6 +304,7 @@ function completeReport(data, { keepEvents = false } = {}) {
   if (data.report) state.report = data.report;
   const followupSuggestions = data.followupSuggestions || state.currentReview?.followupSuggestions || [];
   state.currentReview = { ...state.currentReview, reportAvailable: true, status: data.status || "completed", quality: data.quality, followupSuggestions };
+  shareController.sync(state.currentReview);
   renderReportContent(state.report, false, data.quality);
   renderFollowupSuggestions(document.querySelector("#followupSuggestions"), followupSuggestions, askSuggestedFollowup);
   elements.promptInput.placeholder = t("composer.riskFollowup", { zh: "继续追问：最大的投资风险是什么？" });
@@ -357,6 +368,7 @@ function showConversation() {
   elements.emptyState.classList.add("hidden");
   elements.messageStream.classList.remove("hidden");
   syncConversationPdfButton(elements.conversationPdfButton, state.currentId);
+  shareController.sync();
 }
 
 function renderProgressPanel() {
@@ -474,6 +486,7 @@ function resetWorkspace() {
   draft.clear();
   autoResize();
   syncConversationPdfButton(elements.conversationPdfButton, "");
+  shareController.sync(null);
   loadHistory();
   elements.sidebar.classList.remove("open");
 }
@@ -481,26 +494,4 @@ function resetWorkspace() {
 function setBusy(busy) {
   elements.sendButton.disabled = busy;
   document.querySelectorAll("[data-followup-suggestion]").forEach((button) => { button.disabled = busy; });
-}
-
-function autoResize() {
-  elements.promptInput.style.height = "auto";
-  elements.promptInput.style.height = `${Math.min(elements.promptInput.scrollHeight, 110)}px`;
-}
-
-function scrollBottom(force = false) {
-  if (!force && !state.autoFollow) return;
-  requestAnimationFrame(() => elements.conversation.scrollTo({ top: elements.conversation.scrollHeight, behavior: "auto" }));
-}
-
-function isNearConversationBottom() {
-  return elements.conversation.scrollHeight - elements.conversation.scrollTop - elements.conversation.clientHeight < 120;
-}
-
-function toast(message) {
-  const item = document.createElement("div");
-  item.className = "toast";
-  item.textContent = message;
-  elements.toastRegion.append(item);
-  setTimeout(() => item.remove(), 3800);
 }
