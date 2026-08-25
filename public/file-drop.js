@@ -1,4 +1,4 @@
-export function bindFileDrop({ dropZone, onFile, onMultiple = () => {} }) {
+export function bindFileDrop({ dropZone, onFile, onFiles, onMultiple = () => {} }) {
   let depth = 0;
   const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes("Files");
   const cancelFileEvent = (event) => {
@@ -24,8 +24,11 @@ export function bindFileDrop({ dropZone, onFile, onMultiple = () => {} }) {
     depth = 0;
     dropZone.classList.remove("is-dragging");
     const files = filesFromDrop(event);
-    if (files.length > 1) onMultiple(files.length);
-    if (files[0]) onFile(files[0]);
+    if (onFiles) onFiles(files);
+    else {
+      if (files.length > 1) onMultiple(files.length);
+      if (files[0]) onFile(files[0]);
+    }
   });
   document.addEventListener("drop", (event) => cancelFileEvent(event));
   document.addEventListener("dragover", (event) => cancelFileEvent(event));

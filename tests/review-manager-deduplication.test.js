@@ -28,3 +28,28 @@ test("concurrent identical uploads reuse one active review", async () => {
   assert.equal(first.id, second.id);
   assert.equal(uploadWrites, 1);
 });
+
+test("an initial multi-file review persists every upload and exposes only safe metadata", async () => {
+  const jobs = new Map();
+  const writes = [];
+  const repository = {
+    list: async () => [],
+    saveUpload: async (id, buffer, options) => { writes.push({ value: buffer.toString(), options }); return `20260826/${id}-${options.slot + 1}.source`; },
+    save: async (job) => { jobs.set(job.id, structuredClone(job)); return job; },
+    get: async (id) => jobs.get(id) || null
+  };
+  const pipeline = { steps: [{ key: "noop", label: "noop" }], execute: async () => ({ ok: true }) };
+  const manager = createReviewManagerService({ pipeline, repository, model: {} });
+  const review = await manager.create({
+    instruction: "联合核查",
+    uploads: [
+      { filename: "deck.pdf", size: 4, data: Buffer.from("deck").toString("base64") },
+      { filename: "notes.txt", size: 5, data: Buffer.from("notes").toString("base64") }
+    ]
+  }, { ownerId: "browser-multi" });
+  assert.deepEqual(writes.map((item) => item.value), ["deck", "notes"]);
+  assert.deepEqual(writes.map((item) => item.options.slot), [0, 1]);
+  assert.deepEqual(review.uploads.map((item) => item.filename), ["deck.pdf", "notes.txt"]);
+  assert.equal(review.uploads.some((item) => item.data || item.storagePath || item.sha256), false);
+  assert.equal(jobs.get(review.id).uploads.every((item) => item.persisted && !item.data), true);
+});

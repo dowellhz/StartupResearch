@@ -10,6 +10,7 @@ import { transitionReview } from "./review-state-machine.js";
 import { forkSharedReview } from "./review-share-state.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
 import { operationalError, safePipelineFailure } from "../infra/public-error.js";
+import { persistReviewUploadSet, prepareReviewUploadSet } from "./review-upload-set.js";
 import {
   array, assertNoEvidenceRefresh, assertOwnerId, buildPreviousAnalysisSnapshot,
   normalizeComparable, normalizeInstruction, publicJob, recoverableRestartKey,
@@ -32,7 +33,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     enqueue: enqueueRun
   });
 
-  async function create({ taskType = "attachment_review", companyName, instruction, outputLanguage, upload, researchTemplate, sourceUrl }, { ownerId } = {}) {
+  async function create({ taskType = "attachment_review", companyName, instruction, outputLanguage, upload, uploads, researchTemplate, sourceUrl }, { ownerId } = {}) {
     assertOwnerId(ownerId);
     outputLanguage = normalizeOutputLanguage(outputLanguage);
     if (taskType === "company_pre_research") return createCompanyResearch({ companyName, instruction, outputLanguage }, { ownerId });
@@ -41,12 +42,10 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
       await logger.audit?.("review.created", { jobId: job.id, ownerId, taskType: job.taskType });
       return publicJob(job);
     }
-    if (!upload?.data || !upload?.filename) throw new Error("请先上传商业计划书");
-    const buffer = Buffer.from(upload.data, "base64");
-    const uploadHash = createHash("sha256").update(buffer).digest("hex");
-    const createKey = `${ownerId}:${uploadHash}:${normalizeInstruction(instruction)}`;
+    const uploadSet = prepareReviewUploadSet({ upload, uploads });
+    const createKey = `${ownerId}:${uploadSet.hash}:${normalizeInstruction(instruction)}`;
     if (pendingCreates.has(createKey)) return pendingCreates.get(createKey);
-    const promise = createOnce({ companyName, instruction, outputLanguage, upload, buffer, uploadHash }, { ownerId })
+    const promise = createOnce({ companyName, instruction, outputLanguage, uploadSet }, { ownerId })
       .finally(() => pendingCreates.delete(createKey));
     pendingCreates.set(createKey, promise);
     return promise;
@@ -88,23 +87,21 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     }
   }
 
-  async function createOnce({ companyName, instruction, outputLanguage, upload, buffer, uploadHash }, { ownerId }) {
+  async function createOnce({ companyName, instruction, outputLanguage, uploadSet }, { ownerId }) {
     const activeDuplicate = (await repository.list?.({ ownerId, limit: 100 }) || []).find((job) =>
       ["queued", "running"].includes(job.status)
-      && job.upload?.sha256 === uploadHash
+      && (job.uploadSetHash || job.upload?.sha256) === uploadSet.hash
       && normalizeInstruction(job.instruction) === normalizeInstruction(instruction)
       && (job.outputLanguage || "zh") === (outputLanguage || "zh"));
     if (activeDuplicate) return publicJob(activeDuplicate);
     const release = await reserveOwnerCapacity(ownerId);
     try {
       let job = {
-        ...createReviewJob({ companyName, instruction, outputLanguage, upload: { ...upload, sha256: uploadHash }, steps: pipeline.steps, now }),
+        ...createReviewJob({ companyName, instruction, outputLanguage, upload: uploadSet.entries[0].upload, uploads: uploadSet.entries.map((entry) => entry.upload), uploadSetHash: uploadSet.hash, steps: pipeline.steps, now }),
         ownerId
       };
-      if (typeof repository.saveUpload === "function") {
-        const storagePath = await repository.saveUpload(job.id, buffer);
-        job = { ...job, upload: { ...job.upload, data: "", persisted: true, storagePath } };
-      }
+      const persisted = await persistReviewUploadSet({ repository, jobId: job.id, entries: uploadSet.entries });
+      job = { ...job, upload: persisted[0], uploads: persisted };
       await repository.save(job);
       enqueueRun(job.id);
       await logger.audit?.("review.created", { jobId: job.id, ownerId, taskType: job.taskType });
@@ -184,6 +181,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
         instruction: String(instruction || existing.instruction || "全面核查这份 BP").trim(),
         outputLanguage: outputLanguage ? normalizeOutputLanguage(outputLanguage) : existing.outputLanguage || "zh",
         upload: { filename: upload.filename, mimeType: upload.mimeType, size: upload.size, data: "", persisted: true, storagePath, sha256: uploadHash },
+        uploads: [{ filename: upload.filename, mimeType: upload.mimeType, size: upload.size, data: "", persisted: true, storagePath, sha256: uploadHash }],
+        uploadSetHash: uploadHash,
         checkpoints: {},
         stages: pipeline.steps.map((step) => ({ ...step, status: "pending" })),
         messages,

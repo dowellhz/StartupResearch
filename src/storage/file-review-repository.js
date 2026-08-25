@@ -101,6 +101,7 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
 
   async function archiveConversation(id) {
     await initialize();
+    const job = await get(id);
     const directory = path.join(deletedConversationsDir, formatUploadDate(now()));
     await mkdir(directory, { recursive: true });
     const suffix = `${safeId(id)}.${Date.now()}`;
@@ -109,7 +110,7 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
     await moveIfPresent(path.join(artifactsDir, safeId(id)), path.join(directory, `${suffix}.artifacts`));
     index.delete(id);
     await persistIndex();
-    return { archived: movedJob, uploadRetained: Boolean(await getUpload(id)), pdfRetained: Boolean(await getPdf(id)) };
+    return { archived: movedJob, uploadRetained: await hasAnyUpload(job), pdfRetained: Boolean(await getPdf(id)) };
   }
 
   async function archiveForRetention(id, { date = now() } = {}) {
@@ -120,7 +121,7 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
     await moveIfPresent(jobPath(id), path.join(directory, "job.json"));
     await moveIfPresent(reportPath(id), path.join(directory, "report.md"));
     await moveIfPresent(path.join(artifactsDir, safeId(id)), path.join(directory, "artifacts"));
-    await moveAsset(uploadFilePath(id, job.upload?.storagePath), path.join(directory, "upload.source"));
+    await moveUploads(job, directory);
     await moveAsset(pdfFilePath(id, job.pdfStoragePath), path.join(directory, "report.pdf"));
     index.delete(id);
     await persistIndex();
@@ -129,7 +130,7 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
 
   async function archiveAssetsForRetention(job, directory) {
     await mkdir(directory, { recursive: true });
-    const uploadMoved = await moveAsset(uploadFilePath(job.id, job.upload?.storagePath), path.join(directory, `${safeId(job.id)}.source`));
+    const uploadMoved = await moveUploads(job, directory, safeId(job.id));
     const pdfMoved = await moveAsset(pdfFilePath(job.id, job.pdfStoragePath), path.join(directory, `${safeId(job.id)}.pdf`));
     return { uploadMoved, pdfMoved };
   }
@@ -161,15 +162,16 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
     return true;
   }
 
-  async function saveUpload(id, buffer, { date = now() } = {}) {
+  async function saveUpload(id, buffer, { date = now(), slot } = {}) {
     await initialize();
     if (!Buffer.isBuffer(buffer) || !buffer.length) throw new Error("上传文件为空");
     const dateDirectory = formatUploadDate(date);
     const directory = path.join(uploadsDir, dateDirectory);
     await mkdir(directory, { recursive: true });
-    const target = path.join(directory, `${safeId(id)}.source`);
+    const suffix = Number.isInteger(slot) ? `-${slot + 1}` : "";
+    const target = path.join(directory, `${safeId(id)}${suffix}.source`);
     await writeAtomic(target, buffer);
-    return `${dateDirectory}/${safeId(id)}.source`;
+    return `${dateDirectory}/${safeId(id)}${suffix}.source`;
   }
 
   async function getUpload(id, storagePath = "") {
@@ -273,6 +275,21 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
     return await firstExisting(candidates) || findDatedFile(uploadsDir, id, ".source");
   }
 
+  async function moveUploads(job, directory, prefix = "upload") {
+    const uploads = Array.isArray(job.uploads) && job.uploads.length ? job.uploads : job.upload ? [job.upload] : [];
+    const moved = await Promise.all(uploads.map((upload, index) => moveAsset(
+      uploadFilePath(job.id, upload.storagePath),
+      path.join(directory, `${prefix}${uploads.length > 1 ? `-${index + 1}` : ""}.source`)
+    )));
+    return moved.some(Boolean);
+  }
+
+  async function hasAnyUpload(job) {
+    const uploads = Array.isArray(job?.uploads) && job.uploads.length ? job.uploads : job?.upload ? [job.upload] : [];
+    const values = await Promise.all(uploads.map((upload) => uploadFilePath(job.id, upload.storagePath)));
+    return values.some(Boolean);
+  }
+
   async function pdfFilePath(id, storagePath = "") {
     const candidates = [];
     if (/^\d{8}\/[a-zA-Z0-9_-]+\.pdf$/.test(storagePath)) candidates.push(path.join(pdfsDir, storagePath));
@@ -320,6 +337,8 @@ function indexRecord(job) {
     status: job.status,
     reportAvailable: Boolean(job.reportAvailable),
     upload: job.upload ? { filename: job.upload.filename, mimeType: job.upload.mimeType, size: job.upload.size, sha256: job.upload.sha256 } : null,
+    uploads: (Array.isArray(job.uploads) ? job.uploads : []).map((upload) => ({ filename: upload.filename, mimeType: upload.mimeType, size: upload.size, sha256: upload.sha256 })),
+    uploadSetHash: job.uploadSetHash,
     evidenceRefresh: job.evidenceRefresh ? { status: job.evidenceRefresh.status } : null,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,

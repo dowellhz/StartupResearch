@@ -157,6 +157,7 @@ async function route(req, res) {
     if (taskType === "company_pre_research") validateCompanyResearchBody(body);
     if (taskType === "industry_research") validateIndustryResearchBody(body);
     if (taskType === "paper_analysis") validatePaperAnalysisBody(body);
+    const uploads = taskType === "attachment_review" ? normalizeUploads(body) : [];
     const review = await manager.create({
       taskType,
       companyName: body.companyName,
@@ -164,7 +165,8 @@ async function route(req, res) {
       outputLanguage: normalizeOutputLanguage(body.outputLanguage),
       researchTemplate: body.researchTemplate,
       sourceUrl: body.sourceUrl,
-      ...(body.file ? { upload: normalizeUpload(body.file) } : {})
+      ...(body.file ? { upload: normalizeUpload(body.file) } : {}),
+      ...(uploads.length ? { uploads } : {})
     }, { ownerId });
     return json(res, 202, { ok: true, review });
   }
@@ -203,6 +205,7 @@ async function route(req, res) {
 async function matchAndRouteBp(req, res, id, ownerId) {
   const body = await readJson(req, config.maxUploadBytes * 1.42 + 1024 * 1024);
   validateUploadBody(body);
+  if (Array.isArray(body.files) && body.files.length > 1) throw Object.assign(new Error("已有对话中一次只能上传一份新版资料"), { statusCode: 400 });
   const current = await manager.get(id, { ownerId });
   const decision = await companyIdentity.judgeSameCompany({
     currentCompanyName: current.companyName,
@@ -314,7 +317,11 @@ async function readJson(req, maxBytes) {
 }
 
 function validateUploadBody(body) {
-  if (!body.file?.data || !body.file?.filename) throw Object.assign(new Error("请上传 BP 文件"), { statusCode: 400 });
+  const files = inputUploads(body);
+  if (!files.length || files.some((file) => !file?.data || !file?.filename)) throw Object.assign(new Error("请上传 BP 文件"), { statusCode: 400 });
+  if (files.length > 8) throw Object.assign(new Error("首次最多上传 8 份资料"), { statusCode: 400 });
+  const bytes = files.reduce((total, file) => total + Buffer.byteLength(String(file.data || ""), "base64"), 0);
+  if (bytes > config.maxUploadBytes) throw Object.assign(new Error("所有资料合计不能超过上传大小限制"), { statusCode: 413 });
 }
 
 function validateCompanyResearchBody(body) {
@@ -349,6 +356,14 @@ function normalizeUpload(file) {
     size: Number(file.size || 0),
     data: String(file.data || "")
   };
+}
+
+function inputUploads(body) {
+  return Array.isArray(body.files) && body.files.length ? body.files : body.file ? [body.file] : [];
+}
+
+function normalizeUploads(body) {
+  return inputUploads(body).map(normalizeUpload);
 }
 
 function writeSse(res, event) {

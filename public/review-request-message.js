@@ -2,12 +2,14 @@ import { escapeHtml } from "./markdown-renderer.js";
 import { sanitizeVisibleFilename } from "./privacy-redaction.js";
 import { LANGUAGE_EN, getLanguage, t } from "./i18n.js";
 
-export function renderReviewRequest(container, { company, prompt, file, taskType }) {
+export function renderReviewRequest(container, { company, prompt, file, files, taskType }) {
   const isResearch = taskType === "company_pre_research";
   const isIndustry = taskType === "industry_research";
   const isPaper = taskType === "paper_analysis";
-  const name = sanitizeVisibleFilename(file?.name || file?.filename || "附件");
-  const size = file?.size ? ` · ${formatBytes(file.size)}` : "";
+  const attachments = Array.isArray(files) && files.length ? files : file ? [file] : [];
+  const name = attachments.length > 1 ? `${attachments.length} 份资料：${attachments.slice(0, 3).map((item) => sanitizeVisibleFilename(item?.name || item?.filename)).join("、")}${attachments.length > 3 ? "…" : ""}` : sanitizeVisibleFilename(file?.name || file?.filename || "附件");
+  const totalSize = attachments.reduce((total, item) => total + Number(item?.size || 0), 0);
+  const size = totalSize ? ` · ${formatBytes(totalSize)}` : "";
   const identity = company || (getLanguage() === LANGUAGE_EN ? (isResearch ? "Company to research" : isIndustry ? "Industry to research" : isPaper ? "Paper title pending" : "Company identified from material") : (isResearch ? "待研究公司" : isIndustry ? "待研究行业" : isPaper ? "待识别论文" : "由材料自动识别公司"));
   const artifact = isResearch
     ? `<div class="file-inline research-inline"><b>研</b><span>${getLanguage() === LANGUAGE_EN ? "Company Research · Public information" : "公司预研 · 公开信息"}</span></div>`

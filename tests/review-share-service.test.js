@@ -91,3 +91,35 @@ test("only owners can create shares and running snapshots are rejected", async (
   await assert.rejects(service.create(job.id, { ownerId: "owner-b" }), (error) => error.statusCode === 404);
   await assert.rejects(service.create(job.id, { ownerId: "owner-a" }), (error) => error.statusCode === 409);
 });
+
+test("sharing a multi-file review copies every source asset independently", async () => {
+  const source = {
+    id: "bp_multi_source", ownerId: "owner-a", status: "completed", reportAvailable: true,
+    upload: { filename: "deck.pdf", storagePath: "deck.source", sha256: "deck-hash" },
+    uploads: [
+      { filename: "deck.pdf", storagePath: "deck.source", sha256: "deck-hash" },
+      { filename: "notes.txt", storagePath: "notes.source", sha256: "notes-hash" }
+    ]
+  };
+  const jobs = new Map([[source.id, source]]);
+  const copied = [];
+  const shareId = `share_${"m".repeat(32)}`;
+  const service = createReviewShareService({
+    repository: {
+      get: async (id) => jobs.get(id),
+      list: async () => [],
+      getReport: async () => "# report",
+      saveReport: async () => {},
+      getUpload: async (_id, storagePath) => Buffer.from(storagePath),
+      saveUpload: async (id, buffer, options) => { copied.push({ value: buffer.toString(), slot: options.slot }); return `${id}-${options.slot + 1}.source`; },
+      save: async (job) => { jobs.set(job.id, job); return job; }
+    },
+    shareRepository: { save: async (value) => value, get: async () => ({ id: shareId, sourceReviewId: source.id }) },
+    createShareId: () => shareId,
+    createReviewId: () => "copy_multi_review"
+  });
+  const result = await service.importReview(shareId, { ownerId: "owner-b" });
+  assert.deepEqual(copied, [{ value: "deck.source", slot: 0 }, { value: "notes.source", slot: 1 }]);
+  assert.deepEqual(result.review.uploads.map((item) => item.filename), ["deck.pdf", "notes.txt"]);
+  assert.equal(result.review.uploads.some((item) => item.storagePath), false);
+});

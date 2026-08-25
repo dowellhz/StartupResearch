@@ -45,7 +45,7 @@ export function createComposerTaskModeController({ elements, state, clearAttachm
     elements.promptInput.placeholder = state.currentReview?.reportAvailable
       ? t("composer.followupPlaceholder", { zh: "继续追问，或通过 + 上传新材料…" })
       : t("composer.promptPlaceholder", { zh: "补充核查要求，或在报告完成后继续追问…" });
-    elements.composerNote.textContent = t("composer.note", { zh: "点击 + 添加附件或发起公司预研，也可把材料拖入输入框 · AI 结论仅供投资研究参考" });
+    elements.composerNote.textContent = t("composer.note", { zh: "点击 + 首次可添加多份资料，也可发起公司预研或拖入材料 · AI 结论仅供投资研究参考" });
   }
 
   function selectCompanyResearchMode() {

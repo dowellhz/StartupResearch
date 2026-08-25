@@ -2,12 +2,15 @@ import { publicRefresh } from "./evidence-refresh-service.js";
 import { INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./special-research-task-service.js";
 
 export function publicJob(job) {
-  const { upload, checkpoints, ownerId, previousReportArchive, previousAnalysisSnapshot, analysis, evidenceRefresh, shareOrigin, ...safe } = job;
+  const { upload, uploads, uploadSetHash, checkpoints, ownerId, previousReportArchive, previousAnalysisSnapshot, analysis, evidenceRefresh, shareOrigin, ...safe } = job;
+  const publicUploads = (Array.isArray(uploads) && uploads.length ? uploads : upload ? [upload] : [])
+    .map((item) => ({ filename: item.filename, mimeType: item.mimeType, size: item.size }));
   return {
     ...safe,
     shared: Boolean(shareOrigin && !shareOrigin.forkedAt),
     taskType: taskTypeOf(job),
-    upload: upload ? { filename: upload.filename, mimeType: upload.mimeType, size: upload.size } : null,
+    upload: publicUploads[0] || null,
+    uploads: publicUploads,
     checkpointCount: Object.keys(checkpoints || {}).length,
     evidenceRefresh: publicRefresh(evidenceRefresh)
   };

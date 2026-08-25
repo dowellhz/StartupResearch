@@ -1,9 +1,10 @@
 import { escapeHtml, markdownToHtml } from "./markdown-renderer.js";
 import { bindComposerInput } from "./composer-keyboard.js";
 import { scheduleAfterFirstPaint } from "./boot-scheduler.js";
+import { createAttachmentSelectionController } from "./attachment-selection-controller.js";
 import { createComposerDraftController, lastUserInput } from "./composer-draft.js";
 import { ATTACHMENT_SUBMISSION, CANCEL_SUBMISSION, COMPANY_RESEARCH_SUBMISSION, CONFIRM_COMPANY_RESEARCH_SUBMISSION, decideComposerSubmission, FOLLOWUP_SUBMISSION, INDUSTRY_RESEARCH_SUBMISSION, PAPER_ANALYSIS_SUBMISSION } from "./composer-submit-route.js";
-import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, INDUSTRY_RESEARCH, PAPER_ANALYSIS, createComposerTaskModeController, taskTypeForFileInput } from "./composer-task-mode.js";
+import { ATTACHMENT_REVIEW, COMPANY_PRE_RESEARCH, INDUSTRY_RESEARCH, PAPER_ANALYSIS, createComposerTaskModeController } from "./composer-task-mode.js";
 import { createConfirmationDialogController } from "./confirmation-dialog.js";
 import { bindFileDrop } from "./file-drop.js";
 import { createEvidenceRefreshController, isEvidenceRefreshActive } from "./evidence-refresh-ui.js";
@@ -16,9 +17,8 @@ import { downloadConversationPdf, downloadReviewPdf, syncConversationPdfButton }
 import { applyDetectedCompany } from "./review-identity.js";
 import { applyRecoverableReport } from "./review-error.js";
 import { applyUploadRouting, fileToBase64, submitUploadedBp } from "./review-submit.js";
-import { formatBytes, renderReviewRequest } from "./review-request-message.js";
-import { enterUploadedBpCompanyContext, restoreCurrentCompanyContext, setUploadAnalysisState } from "./upload-company-context.js";
-import { sanitizeVisibleFilename } from "./privacy-redaction.js";
+import { renderReviewRequest } from "./review-request-message.js";
+import { setUploadAnalysisState } from "./upload-company-context.js";
 import { renderQualitySummary } from "./quality-summary.js";
 import { createReanalyzeController } from "./reanalyze-controller.js";
 import { createReviewEventSourceController } from "./review-event-source-controller.js";
@@ -83,6 +83,7 @@ const state = {
   currentId: "",
   currentReview: null,
   file: null,
+  files: [],
   report: "",
   reportRenderTimer: null,
   stages: [],
@@ -101,6 +102,7 @@ const draft = createComposerDraftController({
 const shareController = createReviewShareController({ button: elements.shareReviewButton, requestJson, getReview: () => state.currentReview,
   openReview: loadReview, refreshHistory: loadHistory, notify: toast });
 const taskMode = createComposerTaskModeController({ elements, state, clearAttachment: clearFile });
+const attachmentSelection = createAttachmentSelectionController({ elements, state, taskMode, notify: toast });
 const noAttachmentConfirmation = createConfirmationDialogController({ dialog: elements.noAttachmentDialog });
 const evidenceRefreshController = createEvidenceRefreshController({ state, container: elements.messageStream, requestJson,
   connectEvents, closeEvents: () => reviewEvents.close(), notify: toast, scrollBottom, refreshHistory: loadHistory });
@@ -129,8 +131,8 @@ function bindEvents() {
   taskMode.bind();
   shareController.bind();
   bindLanguageToggle({ button: elements.languageToggle });
-  elements.fileInput.addEventListener("change", () => selectFile(elements.fileInput.files[0]));
-  bindFileDrop({ dropZone: elements.composer, onFile: selectFile, onMultiple: () => toast(t("validation.oneFile", { zh: "一次只能上传一份 BP，已选择第一个文件" })) });
+  elements.fileInput.addEventListener("change", () => selectFiles(elements.fileInput.files));
+  bindFileDrop({ dropZone: elements.composer, onFiles: selectFiles });
   elements.removeFile.addEventListener("click", clearFile);
   elements.composer.addEventListener("submit", submitComposer);
   elements.conversationPdfButton.addEventListener("click", () => downloadConversationPdf(state.currentId));
@@ -170,30 +172,8 @@ function renderHistory(reviews) {
   renderHistoryList({ container: elements.historyList, reviews, currentId: state.currentId, requestJson,
     onOpen: loadReview, onCurrentDeleted: resetWorkspace, refresh: loadHistory, notify: toast });
 }
-function selectFile(file) {
-  if (!file) return;
-  const allowed = ["pdf", "pptx", "docx", "txt", "md", "markdown"];
-  const extension = file.name.split(".").pop().toLowerCase();
-  const fileTaskType = taskTypeForFileInput(state.taskType);
-  if (fileTaskType === PAPER_ANALYSIS && extension !== "pdf") return toast(t("validation.paperPdf", { zh: "论文解读仅支持 PDF 文件" }));
-  if (!allowed.includes(extension)) return toast(t("validation.fileTypes", { zh: "请上传 PDF、PPTX、DOCX、TXT 或 Markdown" }));
-  if (file.size > 20 * 1024 * 1024) return toast(t("validation.fileSize", { zh: "文件不能超过 20 MB" }));
-  if (fileTaskType === PAPER_ANALYSIS) taskMode.selectPaperAnalysisMode();
-  else taskMode.selectAttachmentMode();
-  state.file = file;
-  const attachmentReview = fileTaskType === PAPER_ANALYSIS || state.currentReview?.taskType !== ATTACHMENT_REVIEW ? null : state.currentReview;
-  const matchingRequired = enterUploadedBpCompanyContext(elements.companyInput, attachmentReview);
-  elements.fileName.textContent = sanitizeVisibleFilename(file.name);
-  elements.fileMeta.textContent = `${formatBytes(file.size)} · ${fileTaskType === PAPER_ANALYSIS ? t("file.paperPending", { zh: "等待论文解读" }) : matchingRequired ? t("file.companyPending", { zh: "提交后识别是否属于当前公司" }) : t("file.reviewPending", { zh: "等待核查" })}`;
-  elements.filePreview.classList.remove("hidden");
-}
-function clearFile() {
-  setUploadAnalysisState(elements, { active: false });
-  state.file = null;
-  elements.fileInput.value = "";
-  elements.filePreview.classList.add("hidden");
-  restoreCurrentCompanyContext(elements.companyInput, state.currentReview);
-}
+function selectFiles(files) { attachmentSelection.select(files); }
+function clearFile() { attachmentSelection.clear(); }
 async function submitComposer(event) {
   event.preventDefault();
   const prompt = elements.promptInput.value.trim();
@@ -220,8 +200,9 @@ async function submitComposer(event) {
   setUploadAnalysisState(elements, { active: true, matchingRequired });
   setBusy(true);
   try {
-    const data = await fileToBase64(state.file);
-    const file = state.file;
+    const files = state.files.length ? [...state.files] : [state.file];
+    const data = await Promise.all(files.map(fileToBase64));
+    const file = files[0];
     const payload = await submitUploadedBp({
       requestJson,
       currentId: state.currentId,
@@ -230,6 +211,7 @@ async function submitComposer(event) {
       instruction: prompt || t("instruction.bp", { zh: "全面核查这份 BP" }),
       outputLanguage: getLanguage(),
       file,
+      files,
       data
     });
     applyUploadRouting(payload, { elements, state, notify: toast });
@@ -240,7 +222,7 @@ async function submitComposer(event) {
     elements.companyInput.value = payload.review.companyName || payload.decision?.newCompanyName || "";
     elements.companyInput.disabled = false;
     showConversation();
-    renderReviewRequest(elements.messageStream, { company: payload.review.companyName || payload.decision?.newCompanyName || companyName, prompt: prompt || t("instruction.material", { zh: "全面核查这份材料" }), file, taskType: ATTACHMENT_REVIEW });
+    renderReviewRequest(elements.messageStream, { company: payload.review.companyName || payload.decision?.newCompanyName || companyName, prompt: prompt || t("instruction.material", { zh: "全面核查这份材料" }), file, files, taskType: ATTACHMENT_REVIEW });
     draft.clearCompany();
     draft.clearPrompt();
     state.autoFollow = false;
@@ -331,7 +313,7 @@ async function loadReview(id) {
     state.report = review.report || "";
     showConversation();
     elements.messageStream.innerHTML = "";
-    renderReviewRequest(elements.messageStream, { company: review.companyName, prompt: review.instruction, file: review.upload, taskType: review.taskType });
+    renderReviewRequest(elements.messageStream, { company: review.companyName, prompt: review.instruction, file: review.upload, files: review.uploads, taskType: review.taskType });
     renderProgressPanel();
     if (review.report && review.reanalysisInProgress) showPreviousReportDuringReanalysis(review);
     else if (review.report) completeReport({ report: review.report, quality: review.quality, status: review.status, sources: review.sources, followupSuggestions: review.followupSuggestions });

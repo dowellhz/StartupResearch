@@ -3,6 +3,8 @@ import { normalizeReviewReport } from "./report-summary-service.js";
 export function buildConversationExport(review) {
   const taskType = ["company_pre_research", "industry_research", "paper_analysis"].includes(review?.taskType) ? review.taskType : "attachment_review";
   const companyName = String(review?.companyName || "未命名主题").trim();
+  const attachments = (Array.isArray(review?.uploads) && review.uploads.length ? review.uploads : review?.upload ? [review.upload] : [])
+    .map((upload) => ({ filename: String(upload.filename || "附件"), size: Number(upload.size || 0) }));
   return {
     title: `${companyName} · 完整对话`,
     companyName,
@@ -12,10 +14,8 @@ export function buildConversationExport(review) {
     updatedAt: review?.updatedAt || "",
     request: {
       instruction: String(review?.instruction || defaultInstruction(taskType)).trim(),
-      attachment: review?.upload ? {
-        filename: String(review.upload.filename || "附件"),
-        size: Number(review.upload.size || 0)
-      } : null
+      attachment: attachments[0] || null,
+      ...(attachments.length > 1 ? { attachments } : {})
     },
     stages: array(review?.stages).map((stage) => ({
       label: String(stage?.label || ""),

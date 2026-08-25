@@ -30,6 +30,18 @@ test("upload dates use Asia Shanghai calendar days", () => {
   assert.equal(formatUploadDate("2026-08-03T16:30:00Z"), "20260804");
 });
 
+test("multi-file upload slots use separate dated paths", async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "venture-lens-multi-storage-"));
+  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const repository = createFileReviewRepository({ dataDir, now: () => "2026-08-26T01:00:00+08:00" });
+  const first = await repository.saveUpload("bp_multi_storage", Buffer.from("one"), { slot: 0 });
+  const second = await repository.saveUpload("bp_multi_storage", Buffer.from("two"), { slot: 1 });
+  assert.equal(first, "20260826/bp_multi_storage-1.source");
+  assert.equal(second, "20260826/bp_multi_storage-2.source");
+  assert.equal((await repository.getUpload("bp_multi_storage", first)).toString(), "one");
+  assert.equal((await repository.getUpload("bp_multi_storage", second)).toString(), "two");
+});
+
 test("Google login transfers anonymous jobs and protects the new owner from stale saves", async (t) => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "venture-lens-owner-"));
   t.after(() => rm(dataDir, { recursive: true, force: true }));

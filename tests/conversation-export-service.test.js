@@ -34,3 +34,12 @@ test("attachment review export exposes only safe attachment metadata", () => {
   assert.deepEqual(value.request.attachment, { filename: "meeting.pdf", size: 2048 });
   assert.equal("data" in value.request.attachment, false);
 });
+
+test("multi-file review export lists every safe attachment without storage fields", () => {
+  const value = buildConversationExport({
+    companyName: "材料科技",
+    upload: { filename: "deck.pdf", size: 10 },
+    uploads: [{ filename: "deck.pdf", size: 10, storagePath: "private-1" }, { filename: "notes.txt", size: 20, data: "secret" }]
+  });
+  assert.deepEqual(value.request.attachments, [{ filename: "deck.pdf", size: 10 }, { filename: "notes.txt", size: 20 }]);
+});

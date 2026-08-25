@@ -98,11 +98,11 @@
           <button id="exitPaperAnalysisMode" type="button" aria-label="退出论文解读">×</button>
         </div>
         <form class="composer" id="composer">
-          <input id="fileInput" type="file" accept=".pdf,.pptx,.docx,.txt,.md,application/pdf" hidden>
+          <input id="fileInput" type="file" accept=".pdf,.pptx,.docx,.txt,.md,.markdown,application/pdf" multiple hidden>
           <button class="attach-button" id="attachButton" type="button" aria-label="添加内容" data-i18n-aria-label="menu.add" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
           <div class="add-menu hidden" id="addMenu" role="menu">
             <button id="attachmentOption" type="button" role="menuitem">
-              <span class="add-menu-icon">附</span><span><strong data-i18n="menu.attachment">增加附件</strong><small data-i18n="menu.attachmentSub">待核实的 BP 或其他会议材料</small></span>
+              <span class="add-menu-icon">附</span><span><strong data-i18n="menu.attachment">增加附件</strong><small data-i18n="menu.attachmentSub">BP 或补充材料，首次可多选</small></span>
             </button>
             <button id="companyResearchOption" type="button" role="menuitem">
               <span class="add-menu-icon">研</span><span><strong data-i18n="menu.company">公司预研</strong><small data-i18n="menu.companySub">无需附件，抓取公司公开信息</small></span>
@@ -114,7 +114,7 @@
           </div>
           <button class="send-button" id="sendButton" type="submit" aria-label="开始核查" data-i18n-aria-label="composer.send"><svg viewBox="0 0 24 24"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg></button>
         </form>
-        <p class="composer-note" id="composerNote" data-i18n="composer.note">点击 + 添加附件或发起公司预研，也可把材料拖入输入框 · AI 结论仅供投资研究参考</p>
+        <p class="composer-note" id="composerNote" data-i18n="composer.note">点击 + 首次可添加多份资料，也可发起公司预研或拖入材料 · AI 结论仅供投资研究参考</p>
       </footer>
     </main>
   </div>

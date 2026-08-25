@@ -42,6 +42,21 @@ test("document citation corrects a wrong model supplied page number", () => {
   assert.equal(citation.pageNumber, 1);
 });
 
+test("multi-file document citations report the original filename and page", () => {
+  const citation = verifyDocumentCitation({
+    claimId: "c_multi",
+    evidence: { pageNumber: 3, exactQuote: "访谈确认客户已经完成正式采购" },
+    document: {
+      filename: "2 份资料",
+      pages: [{ page: 3, sourcePage: 1, sourceFilename: "访谈记录.txt", text: "访谈确认客户已经完成正式采购。" }]
+    }
+  });
+  assert.equal(citation.sourcePath, "访谈记录.txt");
+  assert.equal(citation.pageNumber, 1);
+  assert.equal(citation.combinedPageNumber, 3);
+  assert.equal(citation.verificationStatus, "verified");
+});
+
 test("manifest keeps search snippets captured and trusts only fetched page bodies", () => {
   const service = createEvidenceVerificationService();
   const manifest = service.buildManifest({

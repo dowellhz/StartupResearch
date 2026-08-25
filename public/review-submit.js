@@ -1,8 +1,11 @@
 import { t } from "./i18n.js";
 
-export function submitUploadedBp({ requestJson, currentId, currentReview, companyName, instruction, outputLanguage, file, data }) {
+export function submitUploadedBp({ requestJson, currentId, currentReview, companyName, instruction, outputLanguage, file, files, data }) {
   const shouldMatch = Boolean(currentId && currentReview?.reportAvailable && (!currentReview.taskType || currentReview.taskType === "attachment_review"));
   const url = shouldMatch ? `/api/reviews/${currentId}/company-match` : "/api/reviews";
+  const selected = Array.isArray(files) && files.length ? files : [file];
+  const encoded = Array.isArray(data) ? data : [data];
+  const uploads = selected.map((item, index) => ({ filename: item.name, mimeType: item.type, size: item.size, data: encoded[index] }));
   return requestJson(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -11,7 +14,8 @@ export function submitUploadedBp({ requestJson, currentId, currentReview, compan
       companyName,
       instruction,
       outputLanguage,
-      file: { filename: file.name, mimeType: file.type, size: file.size, data }
+      file: uploads[0],
+      ...(!shouldMatch && uploads.length > 1 ? { files: uploads } : {})
     })
   });
 }

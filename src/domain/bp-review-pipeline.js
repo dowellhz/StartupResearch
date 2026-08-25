@@ -10,6 +10,7 @@ import { summarizeInvestmentAnalysis } from "./investment-analysis-service.js";
 import { buildReviewResearchPlan } from "./research-tool-planner.js";
 import { buildExtractionMessages, buildReportMessages } from "./review-prompts.js";
 import { completeStructuredJson } from "./structured-model-call.js";
+import { extractReviewDocumentSet } from "./review-document-set.js";
 import { redactSensitiveText, sanitizeVisibleFilename } from "../../public/privacy-redaction.js";
 import {
   assessDetectedCompanyIdentity,
@@ -70,23 +71,13 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
   const execute = runner.execute;
 
   async function parseDocument(context) {
-    const persistedUpload = typeof repository.getUpload === "function"
-      ? await repository.getUpload(context.job.id, context.job.upload.storagePath)
-      : null;
-    const buffer = persistedUpload || Buffer.from(context.job.upload.data || "", "base64");
-    const result = await extractor.extract({
-      buffer,
-      filename: context.job.upload.filename,
-      mimeType: context.job.upload.mimeType
-    }, {
-      signal: context.signal,
-      onProgress: ({ message }) => emit(context, "stage", stageFor("document-parse", "running", message))
-    });
-    if (!result.ok) throw new Error(result.error);
+    const document = await extractReviewDocumentSet({ job: context.job, repository, extractor, signal: context.signal,
+      onProgress: ({ message }) => message && emit(context, "stage", stageFor("document-parse", "running", message)) });
+    const safeUploads = (context.job.uploads || [context.job.upload]).map((upload) => ({ ...upload, filename: sanitizeVisibleFilename(upload.filename), data: "" }));
     return {
       ...context,
-      document: { ...result.value, text: redactSensitiveText(result.value.text), filename: sanitizeVisibleFilename(context.job.upload.filename) },
-      job: { ...context.job, upload: { ...context.job.upload, filename: sanitizeVisibleFilename(context.job.upload.filename), data: "" } }
+      document,
+      job: { ...context.job, upload: safeUploads[0], uploads: safeUploads }
     };
   }
 
@@ -424,7 +415,7 @@ export function createBpReviewPipeline({ extractor, model, repository, pdfReport
   return { execute, steps: steps.map(({ key, label }) => ({ key, label })) };
 }
 
-export function createReviewJob({ companyName, instruction, outputLanguage = "zh", upload, steps, now = () => new Date().toISOString() }) {
+export function createReviewJob({ companyName, instruction, outputLanguage = "zh", upload, uploads, uploadSetHash, steps, now = () => new Date().toISOString() }) {
   const createdAt = now();
   return {
     id: `bp_${randomUUID().replace(/-/g, "").slice(0, 20)}`,
@@ -435,6 +426,8 @@ export function createReviewJob({ companyName, instruction, outputLanguage = "zh
     outputLanguage: String(outputLanguage).toLowerCase().startsWith("en") ? "en" : "zh",
     pipelineVersion: BP_PIPELINE_VERSION,
     upload,
+    uploads: Array.isArray(uploads) && uploads.length ? uploads : [upload],
+    uploadSetHash: uploadSetHash || upload?.sha256 || "",
     status: "queued",
     stages: steps.map((step) => ({ ...step, status: "pending" })),
     checkpoints: {},

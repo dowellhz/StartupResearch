@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { assertOwnerId, publicJob } from "./review-manager-support.js";
 import { isPristineSharedReview, reviewContentVersion } from "./review-share-state.js";
+import { reviewUploads } from "./review-upload-set.js";
 
 export function createReviewShareService({ repository, shareRepository, logger = {}, now = () => new Date().toISOString(), createShareId = defaultShareId, createReviewId = defaultReviewId }) {
   const pendingImports = new Map();
@@ -47,14 +48,15 @@ export function createReviewShareService({ repository, shareRepository, logger =
 
     const importedAt = now();
     const id = createReviewId();
-    const upload = await copyUpload(source, id, importedAt);
+    const uploads = await copyUploads(source, id, importedAt);
     const pdfStoragePath = await copyPdf(source, id, importedAt);
     await repository.saveReport(id, report);
     const clone = await repository.save({
       ...structuredClone(source),
       id,
       ownerId,
-      upload,
+      upload: uploads[0] || null,
+      uploads,
       pdfStoragePath,
       reportAvailable: true,
       createdAt: importedAt,
@@ -66,11 +68,13 @@ export function createReviewShareService({ repository, shareRepository, logger =
     return { review: publicJob(clone), imported: true };
   }
 
-  async function copyUpload(source, targetId, date) {
-    if (!source.upload) return null;
-    const buffer = await repository.getUpload?.(source.id, source.upload.storagePath);
-    const storagePath = buffer?.length ? await repository.saveUpload(targetId, buffer, { date }) : "";
-    return { ...source.upload, data: "", persisted: Boolean(storagePath), storagePath };
+  async function copyUploads(source, targetId, date) {
+    const values = reviewUploads(source);
+    return Promise.all(values.map(async (upload, index) => {
+      const buffer = await repository.getUpload?.(source.id, upload.storagePath);
+      const storagePath = buffer?.length ? await repository.saveUpload(targetId, buffer, { date, ...(values.length > 1 ? { slot: index } : {}) }) : "";
+      return { ...upload, data: "", persisted: Boolean(storagePath), storagePath };
+    }));
   }
 
   async function copyPdf(source, targetId, date) {

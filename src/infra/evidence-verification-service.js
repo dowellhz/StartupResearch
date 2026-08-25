@@ -93,7 +93,9 @@ export function verifyDocumentCitation({ evidence, document = {}, claimId = "", 
     const corrected = parsed.pageNumber && parsed.pageNumber !== page.pageNumber;
     return {
       ...base,
-      pageNumber: page.pageNumber,
+      sourcePath: page.sourceFilename || base.sourcePath,
+      pageNumber: page.sourcePage || page.pageNumber,
+      combinedPageNumber: page.pageNumber,
       charStart: match.start,
       charEnd: match.end,
       matchMethod: "normalized_exact",
@@ -155,6 +157,8 @@ function webCitation(source, { claimId, hashText }) {
 function documentPages(document) {
   const pages = array(document?.pages).map((page, index) => ({
     pageNumber: positiveInteger(page?.page ?? page?.pageNumber) || index + 1,
+    sourcePage: positiveInteger(page?.sourcePage),
+    sourceFilename: clean(page?.sourceFilename, 500),
     text: String(page?.text || "")
   })).filter((page) => page.text.trim());
   if (pages.length) return pages;

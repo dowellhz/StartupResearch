@@ -57,6 +57,21 @@ test("a new BP is identity-routed when the current attachment review is complete
   assert.equal(JSON.parse(request.options.body).apply, true);
 });
 
+test("an initial BP review submits all selected files while keeping the first-file compatibility field", async () => {
+  let request;
+  const requestJson = async (url, options) => { request = { url, body: JSON.parse(options.body) }; return { ok: true }; };
+  await submitUploadedBp({
+    requestJson,
+    companyName: "示例科技",
+    instruction: "联合核查",
+    files: [{ name: "deck.pdf", type: "application/pdf", size: 4 }, { name: "notes.txt", type: "text/plain", size: 5 }],
+    data: ["ZGVjaw==", "bm90ZXM="]
+  });
+  assert.equal(request.url, "/api/reviews");
+  assert.equal(request.body.file.filename, "deck.pdf");
+  assert.deepEqual(request.body.files.map((file) => file.filename), ["deck.pdf", "notes.txt"]);
+});
+
 test("company identity routing switches views only after a new company is identified", () => {
   const state = { autoFollow: false };
   const elements = { messageStream: { innerHTML: "old conversation" } };
