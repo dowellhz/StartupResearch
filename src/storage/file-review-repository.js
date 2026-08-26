@@ -26,9 +26,13 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
     index = await loadOrRebuildIndex();
   }
 
-  async function save(job) {
+  async function save(job, { preserveUpdatedAt = false } = {}) {
     await initialize();
-    const normalized = { ...job, ownerId: ownerOverrides.get(job.id) || job.ownerId, updatedAt: now() };
+    const normalized = {
+      ...job,
+      ownerId: ownerOverrides.get(job.id) || job.ownerId,
+      updatedAt: preserveUpdatedAt && job.updatedAt ? job.updatedAt : now()
+    };
     const stored = await externalizeArtifacts(normalized);
     await writeAtomic(jobPath(normalized.id), JSON.stringify(stored, null, 2));
     index.set(normalized.id, indexRecord(normalized));
@@ -70,7 +74,7 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
     const jobs = await list({ limit: 10000, ownerId: fromOwnerId });
     for (const job of jobs) {
       ownerOverrides.set(job.id, toOwnerId);
-      await save({ ...job, ownerId: toOwnerId });
+      await save({ ...job, ownerId: toOwnerId }, { preserveUpdatedAt: true });
     }
     return jobs.length;
   }
@@ -202,7 +206,7 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
   function selectIndex({ limit, ownerId } = {}) {
     return [...index.values()]
       .filter((job) => ownerId === undefined || job.ownerId === ownerId)
-      .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+      .sort(compareResearchStartDescending)
       .slice(0, Math.max(0, Number(limit) || 0));
   }
 
@@ -323,6 +327,13 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
     archiveAssetsForRetention, archiveConversation, archiveForRetention, archiveReport, assignUnowned, get, getPdf, getReport, getUpload,
     hasPdf, initialize, list, listSummaries, removePdf, save, savePdf, saveReport, saveUpload, transferOwnership
   };
+}
+
+function compareResearchStartDescending(a, b) {
+  const started = String(b.createdAt || b.updatedAt || "").localeCompare(String(a.createdAt || a.updatedAt || ""));
+  if (started) return started;
+  const updated = String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""));
+  return updated || String(b.id || "").localeCompare(String(a.id || ""));
 }
 
 function indexRecord(job) {

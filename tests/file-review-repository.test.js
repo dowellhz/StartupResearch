@@ -45,12 +45,18 @@ test("multi-file upload slots use separate dated paths", async (t) => {
 test("Google login transfers anonymous jobs and protects the new owner from stale saves", async (t) => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "venture-lens-owner-"));
   t.after(() => rm(dataDir, { recursive: true, force: true }));
-  const repository = createFileReviewRepository({ dataDir });
-  const stale = await repository.save({ id: "bp_owner_transfer", ownerId: "anon_old", status: "running" });
+  let timestamp = "2026-08-01T09:00:00.000Z";
+  const repository = createFileReviewRepository({ dataDir, now: () => timestamp });
+  const stale = await repository.save({ id: "bp_owner_transfer", ownerId: "anon_old", status: "running", createdAt: "2026-08-01T08:00:00.000Z" });
+  timestamp = "2026-08-02T09:00:00.000Z";
+  const newer = await repository.save({ id: "bp_owner_transfer_newer", ownerId: "anon_old", status: "completed", createdAt: "2026-08-02T08:00:00.000Z" });
   await repository.save({ id: "bp_other_owner", ownerId: "anon_other", status: "completed" });
-  assert.equal(await repository.transferOwnership("anon_old", "google_owner"), 1);
+  timestamp = "2026-08-14T09:00:00.000Z";
+  assert.equal(await repository.transferOwnership("anon_old", "google_owner"), 2);
   await repository.save({ ...stale, status: "completed" });
   assert.equal((await repository.get("bp_owner_transfer")).ownerId, "google_owner");
+  assert.equal((await repository.get("bp_owner_transfer_newer")).updatedAt, newer.updatedAt);
+  assert.deepEqual((await repository.listSummaries({ ownerId: "google_owner" })).map((job) => job.id), ["bp_owner_transfer_newer", "bp_owner_transfer"]);
   assert.equal((await repository.get("bp_other_owner")).ownerId, "anon_other");
 });
 
