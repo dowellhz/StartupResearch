@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { updateReviewStages } from "../public/review-progress-panel.js";
+import { reviewProgressPresentation, updateReviewStages } from "../public/review-progress-panel.js";
 
 test("progress updates replace known stages and append stages missing from an old snapshot", () => {
   const initial = [{ key: "document-parse", label: "解析", status: "pending" }];
@@ -10,4 +10,11 @@ test("progress updates replace known stages and append stages missing from an ol
   assert.equal(expanded[0].message, "已解析 16 页");
   assert.equal(expanded[1].key, "evidence-verification");
   assert.equal(expanded[1].status, "running");
+});
+
+test("progress presentation exposes stop while active and resume after stopping", () => {
+  assert.equal(reviewProgressPresentation({ status: "running", taskLabel: "公司预研" }).action, "cancel");
+  const stopped = reviewProgressPresentation({ status: "cancelled", taskLabel: "公司预研" });
+  assert.equal(stopped.action, "resume");
+  assert.match(stopped.title, /已停止/);
 });

@@ -361,7 +361,7 @@ function formatDate(value) {
 }
 
 function statusText(status) {
-  return ({ queued: "排队中", running: "进行中", completed: "已完成", needs_attention: "需关注", failed: "失败" })[status] || status || "未知状态";
+  return ({ queued: "排队中", running: "进行中", completed: "已完成", needs_attention: "需关注", failed: "失败", cancelled: "已停止" })[status] || status || "未知状态";
 }
 
 function formatFileSize(value) {

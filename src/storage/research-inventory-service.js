@@ -26,7 +26,7 @@ const STATUS_LABELS = {
   failed: "失败",
   queued: "排队中",
   running: "进行中",
-  cancelled: "已取消"
+  cancelled: "已停止"
 };
 
 export async function collectResearchInventory({ dataDir, fs, includeArchived = true } = {}) {

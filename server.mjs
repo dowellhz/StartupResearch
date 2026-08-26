@@ -171,7 +171,7 @@ async function route(req, res) {
     return json(res, 202, { ok: true, review });
   }
 
-  const match = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)(?:\/(events|pdf|conversation-pdf|messages|retry|reanalyze|refresh|company-match|share))?$/);
+  const match = url.pathname.match(/^\/api\/reviews\/([a-zA-Z0-9_-]+)(?:\/(events|pdf|conversation-pdf|messages|retry|reanalyze|refresh|company-match|share|cancel))?$/);
   if (match) {
     const [, id, action] = match;
     if (req.method === "GET" && action === "events") return streamReviewEvents(req, res, id, ownerId);
@@ -179,6 +179,7 @@ async function route(req, res) {
     if (req.method === "GET" && action === "conversation-pdf") return downloadConversationPdf(res, id, ownerId);
     if (req.method === "POST" && action === "messages") return streamAnswer(req, res, id, ownerId);
     if (req.method === "POST" && action === "company-match") return matchAndRouteBp(req, res, id, ownerId);
+    if (req.method === "POST" && action === "cancel") return json(res, 200, { ok: true, review: await manager.cancel(id, { ownerId }) });
     if (req.method === "POST" && action === "retry") return json(res, 202, { ok: true, review: await manager.retry(id, { ownerId }) });
     if (req.method === "POST" && action === "reanalyze") {
       const body = await readJson(req, 16 * 1024);

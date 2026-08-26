@@ -1,9 +1,10 @@
 const TRANSITIONS = {
-  queued: new Set(["running", "failed"]),
-  running: new Set(["completed", "needs_attention", "failed"]),
+  queued: new Set(["running", "failed", "cancelled"]),
+  running: new Set(["completed", "needs_attention", "failed", "cancelled"]),
   completed: new Set(["running"]),
   needs_attention: new Set(["running"]),
-  failed: new Set(["running"])
+  failed: new Set(["running"]),
+  cancelled: new Set(["running"])
 };
 
 export function transitionReview(job, nextStatus) {

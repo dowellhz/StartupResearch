@@ -33,6 +33,6 @@ export function formatBytes(value) {
 }
 
 export function stageStatusCopy(status) {
-  if (getLanguage() === LANGUAGE_EN) return ({ pending: "Waiting", running: "Processing", completed: "Completed", restored: "Restored", failed: "Failed" })[status] || "";
-  return ({ pending: "等待前序步骤", running: "正在处理", completed: "已完成", restored: "已恢复", failed: "执行失败" })[status] || "";
+  if (getLanguage() === LANGUAGE_EN) return ({ pending: "Waiting", running: "Processing", completed: "Completed", restored: "Restored", failed: "Failed", cancelled: "Stopped" })[status] || "";
+  return ({ pending: "等待前序步骤", running: "正在处理", completed: "已完成", restored: "已恢复", failed: "执行失败", cancelled: "已停止" })[status] || "";
 }

@@ -22,6 +22,7 @@ import { setUploadAnalysisState } from "./upload-company-context.js";
 import { renderQualitySummary } from "./quality-summary.js";
 import { createReanalyzeController } from "./reanalyze-controller.js";
 import { createReviewEventSourceController } from "./review-event-source-controller.js";
+import { createReviewCancellationController } from "./review-cancellation-controller.js";
 import { renderReviewProgressPanel, updateReviewStages } from "./review-progress-panel.js";
 import { createResearchSubmissionController } from "./research-submission-controller.js";
 import { focusResearchStart } from "./research-view-focus.js";
@@ -111,6 +112,8 @@ const reviewEvents = createReviewEventSourceController({ requestJson,
   onSnapshot: applySnapshot, onStage: applyStage, onReportDelta: applyReportDelta, onReportComplete: completeReport,
   onRefreshSnapshot: evidenceRefreshController.apply, onRefreshStage: evidenceRefreshController.apply,
   onRefreshComplete: evidenceRefreshController.complete, onRefreshError: evidenceRefreshController.fail, onTaskError: handleTaskError });
+const reviewCancellation = createReviewCancellationController({ state, requestJson, closeEvents: () => reviewEvents.close(),
+  renderProgress: renderProgressPanel, focusResearchStart: focusCurrentResearchStart, connectEvents, refreshHistory: loadHistory, notify: toast, confirmImpl: window.confirm.bind(window) });
 const researchSubmission = createResearchSubmissionController({ elements, state, taskMode, requestJson, draft, setBusy, notify: toast,
   showConversation, renderProgressPanel, focusCurrentResearchStart, connectEvents, loadHistory, clearFile });
 const reanalyzeCurrentReview = createReanalyzeController({ state, requestJson, renderProgress: renderProgressPanel, connectEvents,
@@ -256,6 +259,7 @@ function handleTaskError(data) {
 function applySnapshot(review) {
   if (review.id && review.id !== state.currentId) return;
   state.currentReview = review;
+  if (review.status === "cancelled") reviewEvents.close();
   shareController.sync(review);
   state.stages = review.stages || state.stages;
   renderProgressPanel();
@@ -356,7 +360,8 @@ function showConversation() {
 
 function renderProgressPanel() {
   renderReviewProgressPanel({ container: elements.messageStream, stages: state.stages,
-    taskType: state.currentReview?.taskType, reportAvailable: state.currentReview?.reportAvailable, scrollBottom });
+    taskType: state.currentReview?.taskType, status: state.currentReview?.status, reportAvailable: state.currentReview?.reportAvailable,
+    onCancel: reviewCancellation.cancel, onResume: reviewCancellation.resume, scrollBottom });
 }
 
 function focusCurrentResearchStart() {

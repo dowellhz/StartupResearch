@@ -47,5 +47,5 @@ function relativeDate(value) {
 
 function statusLabel(status, taskType) {
   if (status === "running") return ({ company_pre_research: t("status.company", { zh: "预研中" }), industry_research: t("status.industry", { zh: "行业研究中" }), paper_analysis: t("status.paper", { zh: "论文解读中" }) })[taskType] || t("status.reviewing", { zh: "核查中" });
-  return ({ queued: t("status.queued", { zh: "排队中" }), completed: t("status.completed", { zh: "已完成" }), needs_attention: t("status.attention", { zh: "需关注" }), failed: t("status.failed", { zh: "失败" }) })[status] || status;
+  return ({ queued: t("status.queued", { zh: "排队中" }), completed: t("status.completed", { zh: "已完成" }), needs_attention: t("status.attention", { zh: "需关注" }), failed: t("status.failed", { zh: "失败" }), cancelled: t("status.cancelled", { zh: "已停止" }) })[status] || status;
 }

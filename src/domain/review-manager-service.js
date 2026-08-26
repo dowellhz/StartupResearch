@@ -6,6 +6,8 @@ import { buildFollowupMessages } from "./review-prompts.js";
 import { normalizeReviewReport } from "./report-summary-service.js";
 import { normalizeOutputLanguage } from "./report-language.js";
 import { createSpecialResearchTaskService, INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./special-research-task-service.js";
+import { createReviewCancellationService, resumedJob } from "./review-cancellation-service.js";
+import { buildWebSearchQueries, shouldUseWebSearch } from "./followup-research-plan.js";
 import { transitionReview } from "./review-state-machine.js";
 import { forkSharedReview } from "./review-share-state.js";
 import { redactSensitiveText } from "../../public/privacy-redaction.js";
@@ -23,6 +25,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   const deletedIds = new Set();
   const pendingCreates = new Map();
   const capacityReservations = new Map();
+  const cancellation = createReviewCancellationService({ repository, controllers, requireOwnedJob, publish, logger, now });
   const specialResearchTasks = createSpecialResearchTaskService({
     repository,
     industryResearchPipeline,
@@ -112,14 +115,15 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   }
 
   async function retry(id, { ownerId } = {}) {
+    cancellation.assertSettled(id);
     const existing = await requireOwnedJob(id, ownerId);
     assertNoEvidenceRefresh(existing);
-    if (!new Set(["failed", "needs_attention"]).has(existing.status)) throw new Error("只有失败或需关注的任务可以重试");
+    if (!new Set(["failed", "needs_attention", "cancelled"]).has(existing.status)) throw new Error("只有失败、需关注或已停止的任务可以重试");
     return withOwnerCapacity(ownerId, async () => {
       const selectedPipeline = pipelineFor(existing);
       const restartKey = recoverableRestartKey(existing);
       await repository.removePdf?.(id, existing.pdfStoragePath);
-      const resumed = resetPipelineFrom(transitionReview(forkSharedReview(existing, "retry", now()), "running"), selectedPipeline.steps, restartKey);
+      const resumed = resumedJob(resetPipelineFrom(transitionReview(forkSharedReview(existing, "retry", now()), "running"), selectedPipeline.steps, restartKey));
       const saved = await repository.save({ ...resumed, error: "", failedStep: "", pdfStoragePath: "" });
       enqueueRun(id);
       await logger.audit?.("review.retried", { jobId: id, ownerId });
@@ -128,6 +132,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   }
 
   async function reanalyze(id, { ownerId, outputLanguage } = {}) {
+    cancellation.assertSettled(id);
     const existing = await requireOwnedJob(id, ownerId);
     assertNoEvidenceRefresh(existing);
     if (existing.status === "running") throw new Error("任务正在运行，无需重复提交");
@@ -159,6 +164,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   }
 
   async function replaceBp(id, { instruction, outputLanguage, upload }, { ownerId } = {}) {
+    cancellation.assertSettled(id);
     const existing = await requireOwnedJob(id, ownerId);
     if (taskTypeOf(existing) !== "attachment_review") throw new Error("公司预研对话不支持替换 BP，请新建附件核查");
     assertNoEvidenceRefresh(existing);
@@ -239,9 +245,9 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     let job = await requireJob(id);
     if (job.status === "queued") job = transitionReview(job, "running");
     else if (job.status !== "running") return;
-    await repository.save(job);
     const controller = new AbortController();
     controllers.set(id, controller);
+    await repository.save(job);
     publish(id, { type: "snapshot", data: publicJob(job), at: now() });
     try {
       const result = await pipelineFor(job).execute(job, {
@@ -250,6 +256,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
       });
       if (!result.ok) {
         const latest = await repository.get(id) || job;
+        if (cancellation.isStopping(id)) return;
         const bestReport = result.context?.report || await repository.getReport(id);
         const quality = result.context?.quality || latest.quality;
         const nextStatus = bestReport ? "needs_attention" : "failed";
@@ -267,6 +274,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
       }
     } finally {
       controllers.delete(id);
+      await cancellation.settle(id);
       if (deletedIds.has(id)) await repository.archiveConversation(id);
     }
   }
@@ -480,19 +488,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     queueMicrotask(() => run(id).catch((error) => logger.error?.("review.run_unhandled", { jobId: id, error })));
   }
 
-  return { ask, create, deleteConversation, failInterrupted, get, list, reanalyze, refreshEvidence, replaceBp, retry, run, runEvidenceRefresh, subscribe };
+  return { ask, cancel: cancellation.cancel, create, deleteConversation, failInterrupted, get, list, reanalyze, refreshEvidence, replaceBp, retry, run, runEvidenceRefresh, subscribe };
 }
 function followupProgress(key, label, status, message) { return { key, label, status, message }; }
 
 function messageId() { return `msg_${randomUUID().replace(/-/g, "").slice(0, 20)}`; }
-
-export function shouldUseWebSearch(question) {
-  return /https?:\/\/|google\s*scholar|谷歌学术|检索|搜索|联网|公开资料|最新|引用量|clinicaltrials|\bNCT\d{8}\b|临床试验|药物管线|适应症/i.test(String(question || ""));
-}
-
-export function buildWebSearchQueries(question) {
-  const text = String(question || "").trim();
-  const urls = text.match(/https?:\/\/[^\s<>"'，。]+/g) || [];
-  const queries = [...urls.slice(0, 2), text];
-  return Array.from(new Set(queries)).slice(0, 3);
-}

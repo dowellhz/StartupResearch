@@ -11,11 +11,13 @@ test("retention moves expired terminal data to a recoverable grace directory", a
   t.after(() => rm(dataDir, { recursive: true, force: true }));
   const repository = createFileReviewRepository({ dataDir, now: () => "2026-07-01T00:00:00Z" });
   await repository.save({ id: "bp_retention", ownerId: "owner", status: "completed", createdAt: "2026-06-01T00:00:00Z", upload: {} });
+  await repository.save({ id: "bp_cancelled", ownerId: "owner", status: "cancelled", createdAt: "2026-06-01T00:00:00Z", upload: {} });
   await repository.saveReport("bp_retention", "report");
   const service = createDataRetentionService({ dataDir, repository, retentionDays: 30, graceDays: 7, now: () => new Date("2026-08-14T00:00:00Z") });
   const result = await service.cleanup();
-  assert.equal(result.archivedJobs, 1);
+  assert.equal(result.archivedJobs, 2);
   assert.equal(await repository.get("bp_retention"), null);
+  assert.equal(await repository.get("bp_cancelled"), null);
   assert.equal(await readFile(path.join(dataDir, "retention-trash", "20260814", "bp_retention", "report.md"), "utf8"), "report");
 });
 

@@ -330,3 +330,31 @@ test("owner active-task capacity also covers retries", async () => {
   const manager = createReviewManagerService({ pipeline: { steps: [], execute: async () => ({ ok: true }) }, repository, model: {}, maxActivePerOwner: 3 });
   await assert.rejects(manager.retry(retryJob.id, { ownerId }), (error) => error.statusCode === 429 && error.code === "active_task_limit");
 });
+
+test("stopping a running review aborts its pipeline and keeps the terminal stopped state", async () => {
+  const ownerId = `anon_${"x".repeat(43)}`;
+  let job = { id: "bp_stop", ownerId, status: "queued", checkpoints: {}, stages: [{ key: "search", status: "running" }] };
+  let started;
+  const didStart = new Promise((resolve) => { started = resolve; });
+  const repository = {
+    get: async () => job,
+    getReport: async () => "",
+    save: async (value) => { job = value; return value; }
+  };
+  const pipeline = {
+    steps: [{ key: "search", label: "检索" }],
+    execute: async (_job, { signal }) => {
+      started();
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      return { ok: false, failedStep: "search", context: {} };
+    }
+  };
+  const manager = createReviewManagerService({ pipeline, repository, model: {} });
+  const running = manager.run(job.id);
+  await didStart;
+  const stopped = await manager.cancel(job.id, { ownerId });
+  await running;
+  assert.equal(stopped.status, "cancelled");
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.stages[0].status, "cancelled");
+});

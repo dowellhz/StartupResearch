@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
-const TERMINAL = new Set(["completed", "needs_attention", "failed"]);
+const TERMINAL = new Set(["completed", "needs_attention", "failed", "cancelled"]);
 
 export function createDataRetentionService({ dataDir, repository, retentionDays = 0, graceDays = 7, now = () => new Date(), logger } = {}) {
   async function cleanup() {
