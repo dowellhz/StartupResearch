@@ -11,6 +11,8 @@ export function createReviewCancellationController({ state, requestJson, closeEv
 
   async function resume() {
     if (requestInFlight || !state.currentId || state.currentReview?.status !== "cancelled") return;
+    state.currentReview = { ...state.currentReview, resumePending: true };
+    renderProgress();
     await update("retry", t("cancel.resumed", { zh: "已从保留的阶段继续研究" }), true);
   }
 
@@ -32,6 +34,10 @@ export function createReviewCancellationController({ state, requestJson, closeEv
       await refreshHistory();
       notify(successMessage);
     } catch (error) {
+      if (state.currentReview?.resumePending) {
+        state.currentReview = { ...state.currentReview, resumePending: false };
+        renderProgress();
+      }
       notify(error.message);
     } finally {
       requestInFlight = false;

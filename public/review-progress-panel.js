@@ -12,7 +12,7 @@ export function updateReviewStages(stages = [], update = {}) {
     : [...values, update];
 }
 
-export function renderReviewProgressPanel({ container, stages = [], taskType, status, reportAvailable = false, onCancel = () => {}, onResume = () => {}, scrollBottom = () => {} }) {
+export function renderReviewProgressPanel({ container, stages = [], taskType, status, resumePending = false, reportAvailable = false, onCancel = () => {}, onResume = () => {}, scrollBottom = () => {} }) {
   let panel = container.querySelector?.("#progressMessage");
   if (!panel) {
     container.insertAdjacentHTML("beforeend", `
@@ -33,19 +33,22 @@ export function renderReviewProgressPanel({ container, stages = [], taskType, st
   }).join("");
   const completed = values.filter((stage) => ["completed", "restored"].includes(stage.status)).length;
   const taskLabel = taskTypeLabels(taskType).task;
-  const presentation = reviewProgressPresentation({ status, reportAvailable, taskLabel });
+  const presentation = reviewProgressPresentation({ status, resumePending, reportAvailable, taskLabel });
   panel.querySelector(".progress-header strong").textContent = presentation.title;
   panel.querySelector(".progress-count").textContent = `${completed}/${values.length}`;
   panel.querySelector(".progress-badge").textContent = presentation.badge;
   const action = panel.querySelector(".progress-stop");
   action.classList.toggle("hidden", !presentation.action);
-  action.textContent = presentation.action === "cancel" ? t("cancel.action", { zh: "停止研究" }) : t("cancel.resume", { zh: "继续研究" });
+  action.textContent = presentation.action === "cancel" ? t("cancel.action", { zh: "停止研究" })
+    : presentation.action === "resuming" ? t("cancel.resuming", { zh: "正在继续…" }) : t("cancel.resume", { zh: "继续研究" });
+  action.disabled = presentation.action === "resuming";
   action.onclick = presentation.action === "cancel" ? onCancel : presentation.action === "resume" ? onResume : null;
   scrollBottom();
   return panel;
 }
 
-export function reviewProgressPresentation({ status, reportAvailable, taskLabel }) {
+export function reviewProgressPresentation({ status, reportAvailable, taskLabel, resumePending = false }) {
+  if (status === "cancelled" && resumePending) return { title: t("progress.taskResuming", { zh: `${taskLabel}正在继续`, task: taskLabel }), badge: "WAIT", action: "resuming" };
   if (status === "cancelled") return { title: t("progress.taskStopped", { zh: `${taskLabel}已停止`, task: taskLabel }), badge: "STOPPED", action: "resume" };
   if (["queued", "running"].includes(status) || (!status && !reportAvailable)) return { title: t("progress.taskRunning", { zh: `${taskLabel}进行中`, task: taskLabel }), badge: "LIVE", action: "cancel" };
   return { title: t("progress.taskDone", { zh: `${taskLabel}已完成`, task: taskLabel }), badge: "DONE", action: "" };

@@ -5,6 +5,7 @@ const ACTIVE_STATUSES = new Set(["queued", "running"]);
 
 export function createReviewCancellationService({ repository, controllers, requireOwnedJob, publish, logger = {}, now = () => new Date().toISOString() }) {
   const stoppingIds = new Set();
+  const settleWaiters = new Map();
 
   async function cancel(id, { ownerId } = {}) {
     const job = await requireOwnedJob(id, ownerId);
@@ -29,16 +30,30 @@ export function createReviewCancellationService({ repository, controllers, requi
     return stoppingIds.has(id);
   }
 
-  async function settle(id) {
-    if (!stoppingIds.delete(id)) return false;
-    const latest = await repository.get(id);
-    if (!latest) return false;
-    const saved = await repository.save(stoppedJob(latest, now()));
-    publish(id, { type: "snapshot", data: publicJob(saved), at: now() });
-    return true;
+  function waitForSettled(id) {
+    if (!stoppingIds.has(id)) return Promise.resolve();
+    return new Promise((resolve) => {
+      const waiters = settleWaiters.get(id) || new Set();
+      waiters.add(resolve);
+      settleWaiters.set(id, waiters);
+    });
   }
 
-  return { assertSettled, cancel, isStopping, settle };
+  async function settle(id) {
+    if (!stoppingIds.delete(id)) return false;
+    try {
+      const latest = await repository.get(id);
+      if (!latest) return false;
+      const saved = await repository.save(stoppedJob(latest, now()));
+      publish(id, { type: "snapshot", data: publicJob(saved), at: now() });
+      return true;
+    } finally {
+      for (const resolve of settleWaiters.get(id) || []) resolve();
+      settleWaiters.delete(id);
+    }
+  }
+
+  return { assertSettled, cancel, isStopping, settle, waitForSettled };
 }
 
 export function stoppedJob(job, stoppedAt) {

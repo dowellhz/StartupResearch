@@ -115,8 +115,11 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   }
 
   async function retry(id, { ownerId } = {}) {
-    cancellation.assertSettled(id);
-    const existing = await requireOwnedJob(id, ownerId);
+    let existing = await requireOwnedJob(id, ownerId);
+    if (existing.status === "cancelled") {
+      await cancellation.waitForSettled(id);
+      existing = await requireOwnedJob(id, ownerId);
+    }
     assertNoEvidenceRefresh(existing);
     if (!new Set(["failed", "needs_attention", "cancelled"]).has(existing.status)) throw new Error("只有失败、需关注或已停止的任务可以重试");
     return withOwnerCapacity(ownerId, async () => {
@@ -132,8 +135,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   }
 
   async function reanalyze(id, { ownerId, outputLanguage } = {}) {
-    cancellation.assertSettled(id);
     const existing = await requireOwnedJob(id, ownerId);
+    cancellation.assertSettled(id);
     assertNoEvidenceRefresh(existing);
     if (existing.status === "running") throw new Error("任务正在运行，无需重复提交");
     return withOwnerCapacity(ownerId, async () => {
@@ -164,8 +167,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   }
 
   async function replaceBp(id, { instruction, outputLanguage, upload }, { ownerId } = {}) {
-    cancellation.assertSettled(id);
     const existing = await requireOwnedJob(id, ownerId);
+    cancellation.assertSettled(id);
     if (taskTypeOf(existing) !== "attachment_review") throw new Error("公司预研对话不支持替换 BP，请新建附件核查");
     assertNoEvidenceRefresh(existing);
     if (existing.status === "running") throw new Error("任务正在运行，请完成后再上传新版 BP");

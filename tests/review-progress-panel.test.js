@@ -17,4 +17,5 @@ test("progress presentation exposes stop while active and resume after stopping"
   const stopped = reviewProgressPresentation({ status: "cancelled", taskLabel: "公司预研" });
   assert.equal(stopped.action, "resume");
   assert.match(stopped.title, /已停止/);
+  assert.equal(reviewProgressPresentation({ status: "cancelled", resumePending: true, taskLabel: "公司预研" }).action, "resuming");
 });

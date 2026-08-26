@@ -360,7 +360,8 @@ function showConversation() {
 
 function renderProgressPanel() {
   renderReviewProgressPanel({ container: elements.messageStream, stages: state.stages,
-    taskType: state.currentReview?.taskType, status: state.currentReview?.status, reportAvailable: state.currentReview?.reportAvailable,
+    taskType: state.currentReview?.taskType, status: state.currentReview?.status, resumePending: state.currentReview?.resumePending,
+    reportAvailable: state.currentReview?.reportAvailable,
     onCancel: reviewCancellation.cancel, onResume: reviewCancellation.resume, scrollBottom });
 }
 

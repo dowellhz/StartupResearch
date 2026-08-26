@@ -21,8 +21,14 @@ test("cancellation aborts active work and reasserts the stopped state after the 
   assert.equal(job.stages[0].status, "cancelled");
   assert.equal(aborted, true);
 
+  let waiterResolved = false;
+  const waiting = service.waitForSettled(job.id).then(() => { waiterResolved = true; });
+  await Promise.resolve();
+  assert.equal(waiterResolved, false);
   job = { ...job, status: "completed" };
   await service.settle(job.id);
+  await waiting;
+  assert.equal(waiterResolved, true);
   assert.equal(job.status, "cancelled");
   assert.equal(job.updatedAt, "2026-08-26T08:00:00.000Z");
 });

@@ -358,3 +358,41 @@ test("stopping a running review aborts its pipeline and keeps the terminal stopp
   assert.equal(job.status, "cancelled");
   assert.equal(job.stages[0].status, "cancelled");
 });
+
+test("the first retry waits for a stopping runner and resumes without another request", async () => {
+  const ownerId = `anon_${"y".repeat(43)}`;
+  let job = { id: "bp_wait_resume", ownerId, status: "queued", checkpoints: {}, stages: [{ key: "search", status: "running" }] };
+  let finishStoppedRun;
+  let executeCount = 0;
+  const stoppedRunFinished = new Promise((resolve) => { finishStoppedRun = resolve; });
+  const repository = {
+    get: async () => job,
+    getReport: async () => "",
+    list: async () => [],
+    save: async (value) => { job = value; return value; }
+  };
+  const pipeline = {
+    steps: [{ key: "search", label: "检索" }],
+    execute: async () => {
+      executeCount += 1;
+      if (executeCount === 1) {
+        await stoppedRunFinished;
+        return { ok: false, failedStep: "search", context: {} };
+      }
+      return { ok: true };
+    }
+  };
+  const manager = createReviewManagerService({ pipeline, repository, model: {} });
+  const running = manager.run(job.id);
+  while (executeCount === 0) await Promise.resolve();
+  await manager.cancel(job.id, { ownerId });
+  let retryResolved = false;
+  const retrying = manager.retry(job.id, { ownerId }).then((result) => { retryResolved = true; return result; });
+  await Promise.resolve();
+  assert.equal(retryResolved, false);
+  finishStoppedRun();
+  await running;
+  const resumed = await retrying;
+  assert.equal(resumed.status, "running");
+  assert.equal(resumed.stages[0].status, "pending");
+});
