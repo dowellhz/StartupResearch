@@ -44,14 +44,14 @@
         <button class="top-share-button hidden" id="shareReviewButton" type="button" title="分享独立副本" aria-label="分享独立副本" data-i18n-title="share.action" data-i18n-aria-label="share.action">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"/></svg><span data-i18n="share.label">分享</span>
         </button>
+        <button class="top-pdf-download" id="conversationPdfButton" type="button" title="下载完整对话 PDF" aria-label="下载完整对话 PDF" data-i18n-title="top.download" data-i18n-aria-label="top.download" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4"/><path d="M8.5 15.5h7M8.5 18h5"/></svg><span>PDF</span>
+        </button>
         <div class="top-actions">
           <div class="google-auth-slot hidden" id="googleAuthSlot">
             <button class="google-login hidden" id="googleLoginButton" type="button"><span>G</span><span data-i18n="auth.signIn">使用 Google 登录</span></button>
             <div class="google-account hidden" id="googleAccount"><img class="hidden" id="googleAccountAvatar" alt=""><span id="googleAccountName"></span><button id="googleLogoutButton" type="button" data-i18n="auth.signOut">退出</button></div>
           </div>
-          <button class="top-pdf-download" id="conversationPdfButton" type="button" title="下载完整对话 PDF" aria-label="下载完整对话 PDF" data-i18n-title="top.download" data-i18n-aria-label="top.download" disabled>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4"/><path d="M8.5 15.5h7M8.5 18h5"/></svg><span>PDF</span>
-          </button>
           <span class="secure-label"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/></svg><span id="secureLabelText" data-i18n="top.secure">匿名浏览器隔离</span></span>
         </div>
       </header>
