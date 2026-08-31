@@ -393,7 +393,7 @@ function ensureReportCard(streaming) {
           <div class="quality-summary hidden"></div>
           <div class="report-content"></div>
           <div class="report-footer ${streaming ? "hidden" : ""}">
-            <button class="pdf-download-icon" data-download title="${t("report.download", { zh: "下载 PDF 核查报告" })}" aria-label="${t("report.download", { zh: "下载 PDF 核查报告" })}"><svg viewBox="0 0 52 62" aria-hidden="true"><path class="pdf-page" d="M8 2h25l11 11v47H8z"/><path class="pdf-fold" d="M33 2v12h11"/><text x="26" y="43" text-anchor="middle">PDF</text></svg></button>
+            <button class="pdf-download-icon" data-download title="${t("report.download", { zh: "下载 PDF 核查报告" })}" aria-label="${t("report.download", { zh: "下载 PDF 核查报告" })}"><svg viewBox="0 0 64 64" aria-hidden="true"><rect class="download-tile" x="3" y="3" width="58" height="58" rx="13"/><path class="download-arrow" d="M32 13v23m-9-9 9 9 9-9M17 43v5h30v-5"/><text x="32" y="57" text-anchor="middle">PDF</text></svg></button>
             <button class="refresh-evidence-button" data-refresh-evidence>${t("report.refresh", { zh: "刷新公开资料" })}</button>
             <button class="reanalyze-button" data-reanalyze>重新核查</button>
           </div>
