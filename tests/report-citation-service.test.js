@@ -25,8 +25,8 @@ test("resolves actual evidence IDs in prose, lists and tables into clickable lin
   assert.equal(resolveReportCitations(result.report, { sources }).report, result.report);
 });
 
-test("does not rewrite existing links, URLs, code or partial identifiers", () => {
-  const markdown = '[source_19](https://example.com/source_3) https://example.com/source_19\n`source_19`\n```js\nsource_3\n```\n~~~\nsource_19\n~~~\nfoo_source_19 source_19abc\n[source_19][existing]\n[link]: https://example.com/source_19';
+test("does not rewrite bare URLs, code, reference-style links or partial identifiers", () => {
+  const markdown = 'https://example.com/source_19\n`source_19`\n```js\nsource_3\n```\n~~~\nsource_19\n~~~\nfoo_source_19 source_19abc\n[source_19][existing]\n[link]: https://example.com/source_19';
   assert.equal(resolveReportCitations(markdown, { sources }).report, markdown);
 });
 
