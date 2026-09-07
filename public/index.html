@@ -140,6 +140,18 @@
       </div>
     </form>
   </dialog>
+  <dialog class="confirmation-dialog" id="actionConfirmDialog" aria-labelledby="actionConfirmTitle" aria-describedby="actionConfirmDescription">
+    <form method="dialog">
+      <div class="confirmation-icon" aria-hidden="true">确</div>
+      <p class="eyebrow">CONFIRM</p>
+      <h2 id="actionConfirmTitle" data-confirm-title data-i18n="confirm.actionTitle">确认操作</h2>
+      <p id="actionConfirmDescription" data-confirm-description></p>
+      <div class="dialog-actions">
+        <button class="dialog-secondary" type="submit" value="cancel" data-i18n="confirm.actionCancel">取消</button>
+        <button class="dialog-primary" type="submit" value="confirm" data-confirm-accept data-i18n="confirm.actionOk">确认</button>
+      </div>
+    </form>
+  </dialog>
   <div class="toast-region" id="toastRegion"></div>
   <script type="module" src="/app.js"></script>
   <script type="module" src="/google-auth-ui.js"></script>

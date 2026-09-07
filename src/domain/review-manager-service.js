@@ -7,6 +7,8 @@ import { normalizeReviewReport } from "./report-summary-service.js";
 import { normalizeOutputLanguage } from "./report-language.js";
 import { createSpecialResearchTaskService, INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./special-research-task-service.js";
 import { createReviewCancellationService, resumedJob } from "./review-cancellation-service.js";
+import { createOwnerCapacityGuard } from "./review-owner-capacity.js";
+import { createEnqueueFailureHandler } from "./review-enqueue-failure.js";
 import { buildWebSearchQueries, shouldUseWebSearch } from "./followup-research-plan.js";
 import { transitionReview } from "./review-state-machine.js";
 import { forkSharedReview } from "./review-share-state.js";
@@ -24,7 +26,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   const refreshControllers = new Map();
   const deletedIds = new Set();
   const pendingCreates = new Map();
-  const capacityReservations = new Map();
+  const capacity = createOwnerCapacityGuard({ repository, taskQueue, maxActivePerOwner });
+  const enqueueFailure = createEnqueueFailureHandler({ repository, publish, logger, now });
   const cancellation = createReviewCancellationService({ repository, controllers, requireOwnedJob, publish, logger, now });
   const specialResearchTasks = createSpecialResearchTaskService({
     repository,
@@ -32,7 +35,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     paperAnalysisPipeline,
     pendingCreates,
     now,
-    beforeCreate: reserveOwnerCapacity,
+    beforeCreate: capacity.admit,
     enqueue: enqueueRun
   });
 
@@ -55,9 +58,9 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   }
 
   async function createCompanyResearch({ companyName, instruction, outputLanguage }, { ownerId }) {
-    if (!companyResearchPipeline) throw new Error("公司预研服务未启用");
+    if (!companyResearchPipeline) throw operationalError("公司预研服务未启用", { statusCode: 503, code: "company_research_disabled" });
     const name = String(companyName || "").replace(/\s+/g, " ").trim();
-    if (!name) throw new Error("公司预研需要填写公司名称");
+    if (!name) throw operationalError("公司预研需要填写公司名称", { statusCode: 400, code: "company_name_required" });
     const researchInstruction = normalizeInstruction(instruction) || "基于公开信息完成公司预研";
     const createKey = `${ownerId}:company_pre_research:${name.toLowerCase()}:${researchInstruction}:${outputLanguage || "zh"}`;
     if (pendingCreates.has(createKey)) return pendingCreates.get(createKey);
@@ -67,38 +70,37 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     return promise;
   }
 
+  // 准入 = owner 活动额度 + 一个排队位。两者都必须在任务落盘之前拿到：
+  // 队列位若等到入队时才判定，被拒的任务已经保存，会变成不执行也不通知的僵尸任务。
   async function createCompanyResearchOnce({ companyName, instruction, outputLanguage }, { ownerId }) {
-    const activeDuplicate = (await repository.list?.({ ownerId, limit: 100 }) || []).find((job) =>
+    const activeDuplicate = (await capacity.summaries(ownerId, 100)).find((job) =>
       job.taskType === "company_pre_research"
       && ["queued", "running"].includes(job.status)
       && normalizeComparable(job.companyName) === normalizeComparable(companyName)
       && normalizeInstruction(job.instruction) === normalizeInstruction(instruction)
       && (job.outputLanguage || "zh") === (outputLanguage || "zh"));
-    if (activeDuplicate) return publicJob(activeDuplicate);
-    const release = await reserveOwnerCapacity(ownerId);
-    try {
+    if (activeDuplicate) return publicJob(await capacity.hydrate(activeDuplicate));
+    return capacity.withAdmission(ownerId, async ({ release, useSlot }) => {
       const job = {
         ...createCompanyPreResearchJob({ companyName, instruction, outputLanguage, steps: companyResearchPipeline.steps, now }),
         ownerId
       };
       await repository.save(job);
-      enqueueRun(job.id);
+      release();
+      enqueueRun(job.id, ownerId, useSlot());
       await logger.audit?.("review.created", { jobId: job.id, ownerId, taskType: job.taskType });
       return publicJob(job);
-    } finally {
-      release();
-    }
+    });
   }
 
   async function createOnce({ companyName, instruction, outputLanguage, uploadSet }, { ownerId }) {
-    const activeDuplicate = (await repository.list?.({ ownerId, limit: 100 }) || []).find((job) =>
+    const activeDuplicate = (await capacity.summaries(ownerId, 100)).find((job) =>
       ["queued", "running"].includes(job.status)
       && (job.uploadSetHash || job.upload?.sha256) === uploadSet.hash
       && normalizeInstruction(job.instruction) === normalizeInstruction(instruction)
       && (job.outputLanguage || "zh") === (outputLanguage || "zh"));
-    if (activeDuplicate) return publicJob(activeDuplicate);
-    const release = await reserveOwnerCapacity(ownerId);
-    try {
+    if (activeDuplicate) return publicJob(await capacity.hydrate(activeDuplicate));
+    return capacity.withAdmission(ownerId, async ({ release, useSlot }) => {
       let job = {
         ...createReviewJob({ companyName, instruction, outputLanguage, upload: uploadSet.entries[0].upload, uploads: uploadSet.entries.map((entry) => entry.upload), uploadSetHash: uploadSet.hash, steps: pipeline.steps, now }),
         ownerId
@@ -106,12 +108,11 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
       const persisted = await persistReviewUploadSet({ repository, jobId: job.id, entries: uploadSet.entries });
       job = { ...job, upload: persisted[0], uploads: persisted };
       await repository.save(job);
-      enqueueRun(job.id);
+      release();
+      enqueueRun(job.id, ownerId, useSlot());
       await logger.audit?.("review.created", { jobId: job.id, ownerId, taskType: job.taskType });
       return publicJob(job);
-    } finally {
-      release();
-    }
+    });
   }
 
   async function retry(id, { ownerId } = {}) {
@@ -121,14 +122,15 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
       existing = await requireOwnedJob(id, ownerId);
     }
     assertNoEvidenceRefresh(existing);
-    if (!new Set(["failed", "needs_attention", "cancelled"]).has(existing.status)) throw new Error("只有失败、需关注或已停止的任务可以重试");
-    return withOwnerCapacity(ownerId, async () => {
+    if (!new Set(["failed", "needs_attention", "cancelled"]).has(existing.status)) throw operationalError("只有失败、需关注或已停止的任务可以重试", { statusCode: 409, code: "retry_not_allowed" });
+    return capacity.withAdmission(ownerId, async ({ release, useSlot }) => {
       const selectedPipeline = pipelineFor(existing);
       const restartKey = recoverableRestartKey(existing);
       await repository.removePdf?.(id, existing.pdfStoragePath);
       const resumed = resumedJob(resetPipelineFrom(transitionReview(forkSharedReview(existing, "retry", now()), "running"), selectedPipeline.steps, restartKey));
       const saved = await repository.save({ ...resumed, error: "", failedStep: "", pdfStoragePath: "" });
-      enqueueRun(id);
+      release();
+      enqueueRun(id, ownerId, useSlot());
       await logger.audit?.("review.retried", { jobId: id, ownerId });
       return publicJob(saved);
     });
@@ -138,12 +140,12 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     const existing = await requireOwnedJob(id, ownerId);
     cancellation.assertSettled(id);
     assertNoEvidenceRefresh(existing);
-    if (existing.status === "running") throw new Error("任务正在运行，无需重复提交");
-    return withOwnerCapacity(ownerId, async () => {
+    if (existing.status === "running") throw operationalError("任务正在运行，无需重复提交", { statusCode: 409, code: "task_already_running" });
+    return capacity.withAdmission(ownerId, async ({ release, useSlot }) => {
       const selectedPipeline = pipelineFor(existing);
       if (["attachment_review", PAPER_ANALYSIS].includes(taskTypeOf(existing)) && !existing.sourceUrl) {
         const upload = await repository.getUpload?.(id, existing.upload?.storagePath);
-        if (!upload?.length) throw new Error("原始 BP 未保存，请重新上传文件发起核查");
+        if (!upload?.length) throw operationalError("原始 BP 未保存，请重新上传文件发起核查", { statusCode: 409, code: "source_upload_missing" });
       }
       const archivedReport = await repository.archiveReport?.(id);
       await repository.removePdf?.(id, existing.pdfStoragePath);
@@ -160,7 +162,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
         previousReportArchive: archivedReport || "",
         pdfStoragePath: ""
       });
-      enqueueRun(id);
+      release();
+      enqueueRun(id, ownerId, useSlot());
       await logger.audit?.("review.reanalyzed", { jobId: id, ownerId });
       return publicJob(job);
     });
@@ -169,11 +172,11 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   async function replaceBp(id, { instruction, outputLanguage, upload }, { ownerId } = {}) {
     const existing = await requireOwnedJob(id, ownerId);
     cancellation.assertSettled(id);
-    if (taskTypeOf(existing) !== "attachment_review") throw new Error("公司预研对话不支持替换 BP，请新建附件核查");
+    if (taskTypeOf(existing) !== "attachment_review") throw operationalError("公司预研对话不支持替换 BP，请新建附件核查", { statusCode: 400, code: "replace_bp_unsupported" });
     assertNoEvidenceRefresh(existing);
-    if (existing.status === "running") throw new Error("任务正在运行，请完成后再上传新版 BP");
-    if (!upload?.data || !upload?.filename) throw new Error("请上传新版商业计划书");
-    return withOwnerCapacity(ownerId, async () => {
+    if (existing.status === "running") throw operationalError("任务正在运行，请完成后再上传新版 BP", { statusCode: 409, code: "task_already_running" });
+    if (!upload?.data || !upload?.filename) throw operationalError("请上传新版商业计划书", { statusCode: 400, code: "upload_required" });
+    return capacity.withAdmission(ownerId, async ({ release, useSlot }) => {
       const buffer = Buffer.from(upload.data, "base64");
       const uploadHash = createHash("sha256").update(buffer).digest("hex");
       const storagePath = await repository.saveUpload(id, buffer);
@@ -202,7 +205,8 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
         previousReportArchive: archivedReport || "",
         pdfStoragePath: ""
       });
-      enqueueRun(id);
+      release();
+      enqueueRun(id, ownerId, useSlot());
       await logger.audit?.("review.bp_replaced", { jobId: id, ownerId });
       return publicJob(job);
     });
@@ -238,8 +242,10 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     return publicJob(saved);
   }
 
-  function run(id) {
-    return taskQueue.run(() => executeRun(id));
+  // admitted 默认为 true：manager.run 的外部调用方（启动恢复）处理的是此前已经
+  // 准入过的任务，不该再受排队上限拦截；新提交走 enqueueRun 并携带预占的队列位。
+  function run(id, ownerId = "", { admitted = true, onStart } = {}) {
+    return taskQueue.run(() => { onStart?.(); return executeRun(id); }, { key: ownerId, admitted });
   }
 
   async function executeRun(id) {
@@ -250,9 +256,9 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     else if (job.status !== "running") return;
     const controller = new AbortController();
     controllers.set(id, controller);
-    await repository.save(job);
-    publish(id, { type: "snapshot", data: publicJob(job), at: now() });
     try {
+      await repository.save(job);
+      publish(id, { type: "snapshot", data: publicJob(job), at: now() });
       const result = await pipelineFor(job).execute(job, {
         signal: controller.signal,
         onEvent: (event) => publish(id, event)
@@ -283,25 +289,34 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   }
 
   async function refreshEvidence(id, { ownerId } = {}) {
-    if (!evidenceRefreshService) throw new Error("公开资料刷新服务未启用");
+    if (!evidenceRefreshService) throw operationalError("公开资料刷新服务未启用", { statusCode: 503, code: "evidence_refresh_disabled" });
     const existing = await requireOwnedJob(id, ownerId);
-    if ([INDUSTRY_RESEARCH, PAPER_ANALYSIS].includes(taskTypeOf(existing))) throw new Error("该研究类型暂不支持公司公开资料刷新，请使用重新研究或继续追问");
+    if ([INDUSTRY_RESEARCH, PAPER_ANALYSIS].includes(taskTypeOf(existing))) throw operationalError("该研究类型暂不支持公司公开资料刷新，请使用重新研究或继续追问", { statusCode: 400, code: "evidence_refresh_unsupported" });
     if (!["completed", "needs_attention"].includes(existing.status) || !existing.reportAvailable) {
-      throw new Error(taskTypeOf(existing) === "company_pre_research" ? "请等待公司预研报告完成后再刷新公开资料" : "请等待 BP 核查报告完成后再刷新公开资料");
+      throw operationalError(taskTypeOf(existing) === "company_pre_research" ? "请等待公司预研报告完成后再刷新公开资料" : "请等待 BP 核查报告完成后再刷新公开资料", { statusCode: 409, code: "report_not_ready" });
     }
     assertNoEvidenceRefresh(existing);
-    const release = await reserveOwnerCapacity(ownerId);
-    try {
+    return capacity.withAdmission(ownerId, async ({ release, useSlot }) => {
       const evidenceRefresh = evidenceRefreshService.createRefresh();
       const job = await repository.save({ ...forkSharedReview(existing, "evidence_refresh", now()), evidenceRefresh });
-      queueMicrotask(() => runEvidenceRefresh(id).catch((error) => logger.error?.("review.refresh_failed", { jobId: id, error })));
+      release();
+      enqueueEvidenceRefresh(id, ownerId, useSlot());
       await logger.audit?.("review.evidence_refresh_started", { jobId: id, ownerId });
       return publicJob(job);
-    } finally { release(); }
+    });
   }
 
-  function runEvidenceRefresh(id) {
-    return taskQueue.run(() => executeEvidenceRefresh(id));
+  function runEvidenceRefresh(id, ownerId = "", { admitted = true, onStart } = {}) {
+    return taskQueue.run(() => { onStart?.(); return executeEvidenceRefresh(id); }, { key: ownerId, admitted });
+  }
+
+  function enqueueEvidenceRefresh(id, ownerId, slot) {
+    queueMicrotask(() => {
+      let started = false;
+      slot?.();
+      runEvidenceRefresh(id, ownerId, { admitted: Boolean(slot), onStart: () => { started = true; } })
+        .catch((error) => enqueueFailure.failRefresh(id, ownerId, error, { started }));
+    });
   }
 
   async function executeEvidenceRefresh(id) {
@@ -345,9 +360,9 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   async function ask(id, question, { onDelta, onStatus, onProgress, ownerId, signal } = {}) {
     const job = await requireOwnedJob(id, ownerId);
     const report = normalizeReviewReport(job, await repository.getReport(id));
-    if (!report) throw new Error("报告尚未生成完成");
+    if (!report) throw operationalError("报告尚未生成完成", { statusCode: 409, code: "report_not_ready" });
     const text = String(question || "").trim();
-    if (!text) throw new Error("问题不能为空");
+    if (!text) throw operationalError("问题不能为空", { statusCode: 400, code: "question_required" });
     const history = Array.isArray(job.messages) ? job.messages : [];
     const userMessage = { id: messageId(), role: "user", content: text, status: "complete", at: now() };
     await appendMessage(id, userMessage, { forkReason: "followup" });
@@ -433,7 +448,7 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
 
   function pipelineFor(job) {
     if (taskTypeOf(job) === "company_pre_research") {
-      if (!companyResearchPipeline) throw new Error("公司预研服务未启用");
+      if (!companyResearchPipeline) throw operationalError("公司预研服务未启用", { statusCode: 503, code: "company_research_disabled" });
       return companyResearchPipeline;
     }
     const specialPipeline = specialResearchTasks.pipelineFor(taskTypeOf(job));
@@ -442,9 +457,9 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
   }
 
   async function requireJob(id) {
-    if (deletedIds.has(id)) throw Object.assign(new Error("未找到该核查任务"), { statusCode: 404 });
+    if (deletedIds.has(id)) throw operationalError("未找到该核查任务", { statusCode: 404, code: "review_not_found" });
     const job = await repository.get(id);
-    if (!job) throw Object.assign(new Error("未找到该核查任务"), { statusCode: 404 });
+    if (!job) throw operationalError("未找到该核查任务", { statusCode: 404, code: "review_not_found" });
     return job;
   }
 
@@ -452,32 +467,9 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     assertOwnerId(ownerId);
     const job = await requireJob(id);
     if (job.ownerId !== ownerId) {
-      throw Object.assign(new Error("未找到该核查任务"), { statusCode: 404 });
+      throw operationalError("未找到该核查任务", { statusCode: 404, code: "review_not_found" });
     }
     return job;
-  }
-
-  async function reserveOwnerCapacity(ownerId) {
-    const jobs = await repository.list?.({ ownerId, limit: 10000 }) || [];
-    const active = jobs.filter((job) => ["queued", "running"].includes(job.status) || ["queued", "running"].includes(job.evidenceRefresh?.status)).length;
-    const reserved = capacityReservations.get(ownerId) || 0;
-    if (active + reserved >= maxActivePerOwner) {
-      throw operationalError(`同时运行的研究任务不能超过 ${maxActivePerOwner} 个`, { statusCode: 429, code: "active_task_limit" });
-    }
-    capacityReservations.set(ownerId, reserved + 1);
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      const next = (capacityReservations.get(ownerId) || 1) - 1;
-      if (next > 0) capacityReservations.set(ownerId, next);
-      else capacityReservations.delete(ownerId);
-    };
-  }
-
-  async function withOwnerCapacity(ownerId, operation) {
-    const release = await reserveOwnerCapacity(ownerId);
-    try { return await operation(); } finally { release(); }
   }
 
   async function appendMessage(id, message, { forkReason = "" } = {}) {
@@ -487,8 +479,13 @@ export function createReviewManagerService({ pipeline, companyResearchPipeline, 
     await repository.save({ ...review, messages });
   }
 
-  function enqueueRun(id) {
-    queueMicrotask(() => run(id).catch((error) => logger.error?.("review.run_unhandled", { jobId: id, error })));
+  function enqueueRun(id, ownerId = "", slot = null) {
+    queueMicrotask(() => {
+      let started = false;
+      slot?.();
+      run(id, ownerId, { admitted: Boolean(slot), onStart: () => { started = true; } })
+        .catch((error) => enqueueFailure.failReview(id, ownerId, error, { started }));
+    });
   }
 
   return { ask, cancel: cancellation.cancel, create, deleteConversation, failInterrupted, get, list, reanalyze, refreshEvidence, replaceBp, retry, run, runEvidenceRefresh, subscribe };

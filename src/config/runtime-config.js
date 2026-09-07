@@ -75,7 +75,8 @@ export function getRuntimeConfig(env = process.env) {
     },
     jobs: {
       globalConcurrency: positiveNumber(env.RESEARCH_TASK_CONCURRENCY, 2),
-      maxActivePerOwner: positiveNumber(env.MAX_ACTIVE_TASKS_PER_OWNER, 3)
+      maxActivePerOwner: positiveNumber(env.MAX_ACTIVE_TASKS_PER_OWNER, 3),
+      queueLimit: positiveNumber(env.RESEARCH_TASK_QUEUE_LIMIT, 50)
     },
     retention: {
       days: nonNegativeNumber(env.DATA_RETENTION_DAYS, 0),

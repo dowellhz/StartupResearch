@@ -30,3 +30,16 @@ test("cancel and resume update the current review and event connection", async (
   assert.ok(calls.includes("close"));
   assert.ok(calls.includes("connect:company_1"));
 });
+
+test("停止研究等待异步确认弹窗；用户取消时不发请求", async () => {
+  const state = { currentId: "bp_1", currentReview: { status: "running" } };
+  let requested = false;
+  const controller = createReviewCancellationController({
+    state,
+    confirmImpl: async () => false,
+    requestJson: async () => { requested = true; return { review: {} }; },
+    closeEvents: () => {}, renderProgress: () => {}, connectEvents: () => {}, refreshHistory: () => {}, notify: () => {}
+  });
+  await controller.cancel();
+  assert.equal(requested, false);
+});

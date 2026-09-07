@@ -10,12 +10,12 @@ export async function recoverActiveReviews({ jobs = [], manager, staleAfterMs = 
         await manager.failInterrupted(job.id, `任务在服务重启前超过 ${Math.ceil(staleAfterMs / 60000)} 分钟没有保存进度，已停止自动恢复；原文件与阶段结果已保留，可手动重试`);
         failed.push(job.id);
       } else {
-        manager.run(job.id).catch(() => {});
+        manager.run(job.id, job.ownerId).catch(() => {});
         resumed.push(job.id);
       }
     }
     if (["queued", "running"].includes(job?.evidenceRefresh?.status)) {
-      manager.runEvidenceRefresh?.(job.id).catch(() => {});
+      manager.runEvidenceRefresh?.(job.id, job.ownerId).catch(() => {});
       refreshes.push(job.id);
     }
   }

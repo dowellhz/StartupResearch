@@ -3,6 +3,7 @@ export function markdownToHtml(markdown) {
   const output = [];
   let list = "";
   let table = [];
+  let fence = null;
   const closeList = () => { if (list) output.push(`</${list}>`); list = ""; };
   const flushTable = () => {
     if (!table.length) return;
@@ -17,6 +18,14 @@ export function markdownToHtml(markdown) {
   };
   for (const raw of lines) {
     const line = raw.trim();
+    const fenceEdge = line.match(/^`{3,}\s*([\w+#.-]*)\s*$/);
+    if (fence) {
+      // 围栏内保留原始缩进，且不做任何 Markdown 解析。
+      if (fenceEdge) { output.push(renderFence(fence)); fence = null; }
+      else fence.lines.push(raw);
+      continue;
+    }
+    if (fenceEdge) { closeList(); flushTable(); fence = { language: fenceEdge[1], lines: [] }; continue; }
     if (/^\|.*\|$/.test(line)) { closeList(); table.push(line); continue; }
     flushTable();
     if (!line) { closeList(); continue; }
@@ -36,7 +45,14 @@ export function markdownToHtml(markdown) {
   }
   closeList();
   flushTable();
+  // 流式渲染时围栏可能尚未闭合，直接按代码块输出，好过把 ``` 当正文显示。
+  if (fence) output.push(renderFence(fence));
   return output.join("");
+}
+
+function renderFence({ language, lines }) {
+  const attribute = language ? ` class="language-${escapeHtml(language)}"` : "";
+  return `<pre class="code-block"><code${attribute}>${escapeHtml(lines.join("\n"))}</code></pre>`;
 }
 
 export function escapeHtml(value) {

@@ -166,6 +166,8 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .report-content h2 { font: 600 20px/1.4 Georgia, "Songti SC", serif; color: #783a2b; border-top: 1px solid #e9e5dd; padding-top: 22px; margin: 30px 0 11px; }
 .report-content h3 { font-size: 16px; margin: 18px 0 8px; }
 .report-content h4 { font-size: 15px; color: #5f382e; margin: 16px 0 7px; }
+.report-content pre.code-block { margin: 14px 0; padding: 14px 16px; background: #f3f1ea; border: 1px solid #e4dfd4; border-radius: 10px; overflow-x: auto; }
+.report-content pre.code-block code { display: block; font: 13px/1.6 "SF Mono", Menlo, Consolas, monospace; color: #3a3730; white-space: pre; background: none; padding: 0; }
 .report-content h5, .report-content h6 { font-size: 14px; color: #5f382e; margin: 14px 0 6px; }
 .report-content p { margin: 8px 0; }
 .report-content ul, .report-content ol { padding-left: 20px; }

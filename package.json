@@ -26,7 +26,6 @@
     "@tesseract.js-data/chi_sim": "1.0.0",
     "@tesseract.js-data/eng": "1.0.0",
     "jszip": "^3.10.1",
-    "markdown-it": "^14.2.0",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.1",
     "tesseract.js": "7.0.0"

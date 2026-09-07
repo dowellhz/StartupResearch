@@ -1,23 +1,11 @@
 # Replace research.example.com and the certificate paths for your deployment.
+# 承载的是机密投资材料，明文端口只做跳转，不代理业务流量。
 server {
     listen 80;
     listen [::]:80;
     server_name research.example.com;
 
-    client_max_body_size 20m;
-
-    location / {
-        proxy_pass http://__REMOTE_BIND_HOST__:__PORT__;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 1800s;
-        proxy_send_timeout 1800s;
-    }
+    return 301 https://$host$request_uri;
 }
 
 server {
@@ -31,6 +19,12 @@ server {
     ssl_prefer_server_ciphers off;
 
     client_max_body_size 20m;
+
+    # CSP / HSTS / X-Frame-Options 等安全响应头由应用统一下发（src/infra/security-headers.js），
+    # 这里不重复 add_header，否则浏览器会收到重复且可能冲突的策略。
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
 
     location / {
         proxy_pass http://__REMOTE_BIND_HOST__:__PORT__;

@@ -78,6 +78,7 @@ const elements = {
   sendButton: document.querySelector("#sendButton"),
   shareReviewButton: document.querySelector("#shareReviewButton"),
   sidebar: document.querySelector("#sidebar"),
+  actionConfirmDialog: document.querySelector("#actionConfirmDialog"),
   toastRegion: document.querySelector("#toastRegion")
 };
 const state = {
@@ -105,6 +106,8 @@ const shareController = createReviewShareController({ button: elements.shareRevi
 const taskMode = createComposerTaskModeController({ elements, state, clearAttachment: clearFile });
 const attachmentSelection = createAttachmentSelectionController({ elements, state, taskMode, notify: toast });
 const noAttachmentConfirmation = createConfirmationDialogController({ dialog: elements.noAttachmentDialog });
+const actionConfirmation = createConfirmationDialogController({ dialog: elements.actionConfirmDialog });
+const confirmAction = (description) => actionConfirmation.request({ description });
 const evidenceRefreshController = createEvidenceRefreshController({ state, container: elements.messageStream, requestJson,
   connectEvents, closeEvents: () => reviewEvents.close(), notify: toast, scrollBottom, refreshHistory: loadHistory });
 const reviewEvents = createReviewEventSourceController({ requestJson,
@@ -113,11 +116,11 @@ const reviewEvents = createReviewEventSourceController({ requestJson,
   onRefreshSnapshot: evidenceRefreshController.apply, onRefreshStage: evidenceRefreshController.apply,
   onRefreshComplete: evidenceRefreshController.complete, onRefreshError: evidenceRefreshController.fail, onTaskError: handleTaskError });
 const reviewCancellation = createReviewCancellationController({ state, requestJson, closeEvents: () => reviewEvents.close(),
-  renderProgress: renderProgressPanel, focusResearchStart: focusCurrentResearchStart, connectEvents, refreshHistory: loadHistory, notify: toast, confirmImpl: window.confirm.bind(window) });
+  renderProgress: renderProgressPanel, focusResearchStart: focusCurrentResearchStart, connectEvents, refreshHistory: loadHistory, notify: toast, confirmImpl: confirmAction });
 const researchSubmission = createResearchSubmissionController({ elements, state, taskMode, requestJson, draft, setBusy, notify: toast,
   showConversation, renderProgressPanel, focusCurrentResearchStart, connectEvents, loadHistory, clearFile });
 const reanalyzeCurrentReview = createReanalyzeController({ state, requestJson, renderProgress: renderProgressPanel, connectEvents,
-  focusResearchStart: focusCurrentResearchStart, notify: toast, labelFor: taskTypeLabels, confirmImpl: window.confirm.bind(window), disableButton: () => document.querySelector("[data-reanalyze]")?.setAttribute("disabled", "") });
+  focusResearchStart: focusCurrentResearchStart, notify: toast, labelFor: taskTypeLabels, confirmImpl: confirmAction, disableButton: () => document.querySelector("[data-reanalyze]")?.setAttribute("disabled", "") });
 boot();
 
 function boot() {

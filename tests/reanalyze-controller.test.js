@@ -12,3 +12,25 @@ test("reanalyze controller uses task-specific copy and updates the running snaps
   assert.equal(state.autoFollow, false);
   assert.deepEqual(calls.slice(0, 3), ["render", "focus", "industry_1"]);
 });
+
+test("重新研究等待异步确认弹窗；用户取消时不发请求", async () => {
+  const state = { currentId: "bp_1", currentReview: { taskType: "attachment_review" } };
+  let requested = false;
+  const declined = createReanalyzeController({
+    state,
+    confirmImpl: async () => false,
+    requestJson: async () => { requested = true; return { review: {} }; },
+    renderProgress: () => {}, connectEvents: () => {}, notify: () => {}, labelFor: () => ({ rerun: "重新核查" })
+  });
+  await declined();
+  assert.equal(requested, false);
+
+  const accepted = createReanalyzeController({
+    state,
+    confirmImpl: async () => true,
+    requestJson: async () => { requested = true; return { review: { id: "bp_1", stages: [] } }; },
+    renderProgress: () => {}, connectEvents: () => {}, notify: () => {}, labelFor: () => ({ rerun: "重新核查" })
+  });
+  await accepted();
+  assert.equal(requested, true);
+});

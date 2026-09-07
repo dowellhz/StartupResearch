@@ -1,4 +1,5 @@
 import { publicRefresh } from "./evidence-refresh-service.js";
+import { operationalError } from "../infra/public-error.js";
 import { INDUSTRY_RESEARCH, PAPER_ANALYSIS } from "./special-research-task-service.js";
 
 export function publicJob(job) {
@@ -61,11 +62,11 @@ export function resetPipelineFrom(job, steps, restartKey) {
 }
 
 export function assertNoEvidenceRefresh(job) {
-  if (["queued", "running"].includes(job.evidenceRefresh?.status)) throw new Error("公开资料正在刷新，请完成后再执行其他核查操作");
+  if (["queued", "running"].includes(job.evidenceRefresh?.status)) throw operationalError("公开资料正在刷新，请完成后再执行其他核查操作", { statusCode: 409, code: "evidence_refresh_active" });
 }
 
 export function assertOwnerId(ownerId) {
-  if (!ownerId) throw Object.assign(new Error("匿名浏览器身份无效"), { statusCode: 401 });
+  if (!ownerId) throw operationalError("匿名浏览器身份无效", { statusCode: 401, code: "owner_required" });
 }
 
 export function normalizeInstruction(value) {

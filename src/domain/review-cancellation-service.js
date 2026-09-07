@@ -1,4 +1,5 @@
 import { transitionReview } from "./review-state-machine.js";
+import { operationalError } from "../infra/public-error.js";
 import { array, publicJob } from "./review-manager-support.js";
 
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
@@ -10,7 +11,7 @@ export function createReviewCancellationService({ repository, controllers, requi
   async function cancel(id, { ownerId } = {}) {
     const job = await requireOwnedJob(id, ownerId);
     if (!ACTIVE_STATUSES.has(job.status)) {
-      throw Object.assign(new Error("只有排队中或进行中的研究可以停止"), { statusCode: 409 });
+      throw operationalError("只有排队中或进行中的研究可以停止", { statusCode: 409, code: "cancel_not_allowed" });
     }
     if (controllers.has(id)) stoppingIds.add(id);
     const saved = await repository.save(stoppedJob(job, now()));
@@ -22,7 +23,7 @@ export function createReviewCancellationService({ repository, controllers, requi
 
   function assertSettled(id) {
     if (controllers.has(id) || stoppingIds.has(id)) {
-      throw Object.assign(new Error("研究正在停止，请稍后再重试"), { statusCode: 409 });
+      throw operationalError("研究正在停止，请稍后再重试", { statusCode: 409, code: "cancel_in_progress" });
     }
   }
 

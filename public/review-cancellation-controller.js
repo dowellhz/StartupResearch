@@ -5,7 +5,7 @@ export function createReviewCancellationController({ state, requestJson, closeEv
 
   async function cancel() {
     if (requestInFlight || !state.currentId || !["queued", "running"].includes(state.currentReview?.status)) return;
-    if (!confirmImpl(t("cancel.confirm", { zh: "停止当前研究？已完成的阶段会保留，之后可以继续研究。" }))) return;
+    if (!await confirmImpl(t("cancel.confirm", { zh: "停止当前研究？已完成的阶段会保留，之后可以继续研究。" }))) return;
     await update("cancel", t("cancel.done", { zh: "研究已停止，已完成的阶段已保留" }));
   }
 

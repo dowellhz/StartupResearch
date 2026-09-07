@@ -3,8 +3,11 @@ export function createConfirmationDialogController({ dialog, acceptedValue = "co
   let pendingConfirmation = null;
 
   return {
-    request() {
+    request(overrides = {}) {
       if (pendingConfirmation) return pendingConfirmation;
+      applyText(dialog, "[data-confirm-title]", overrides.title);
+      applyText(dialog, "[data-confirm-description]", overrides.description);
+      applyText(dialog, "[data-confirm-accept]", overrides.confirmLabel);
       dialog.returnValue = "";
       pendingConfirmation = new Promise((resolve) => {
         dialog.addEventListener("close", () => {
@@ -17,4 +20,10 @@ export function createConfirmationDialogController({ dialog, acceptedValue = "co
       return pendingConfirmation;
     }
   };
+}
+
+function applyText(dialog, selector, value) {
+  if (value === undefined || value === null) return;
+  const target = dialog.querySelector(selector);
+  if (target) target.textContent = String(value);
 }

@@ -136,6 +136,7 @@ DEEPSEEK_MODEL=deepseek-chat
 | `RATE_LIMIT_EXPENSIVE_REQUESTS` | `10` | 每 IP + owner 窗口内的昂贵操作上限 |
 | `RESEARCH_TASK_CONCURRENCY` | `2` | 单实例全局研究任务并发上限 |
 | `MAX_ACTIVE_TASKS_PER_OWNER` | `3` | 单一所有者同时排队或运行的任务上限 |
+| `RESEARCH_TASK_QUEUE_LIMIT` | `50` | 研究队列的最大排队长度，超出立即返回 429 |
 | `OWNER_DAILY_COST_UNITS` | `100` | 单一所有者每日昂贵操作预算 |
 | `GLOBAL_DAILY_COST_UNITS` | `1000` | 全局每日昂贵操作预算 |
 | `DATA_RETENTION_DAYS` | `0` | 终态数据保留天数；`0` 表示不自动清理 |
@@ -187,7 +188,7 @@ data/logs/                   应用日志与操作审计 JSONL
 
 当前文件存储实现通过 `data/.venture-lens.lock` 强制单实例运行。SSE 订阅、任务控制器和创建去重均是进程内状态；在引入具备租约的持久化任务队列、共享事件总线和支持并发写入的数据库前，不支持多实例或滚动双写部署。
 
-设置 `DATA_RETENTION_DAYS` 后，超过期限的终态任务、已删除对话、历史报告版本和日志会先移入 `data/retention-trash/YYYYMMDD/`，经过 `DATA_RETENTION_GRACE_DAYS` 后再自动删除。默认值 `0` 禁用自动清理，生产环境应按数据治理要求显式配置。
+设置 `DATA_RETENTION_DAYS` 后，超过期限的终态任务、已删除对话、历史报告版本和日志会先移入 `data/retention-trash/YYYYMMDD/`，经过 `DATA_RETENTION_GRACE_DAYS` 后再自动删除。默认值 `0` 禁用自动清理，生产环境应按数据治理要求显式配置；未配置时服务启动会记录一条 `retention.disabled` 告警。
 
 ## 项目结构
 

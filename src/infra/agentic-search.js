@@ -4,7 +4,7 @@ import { buildSecWebFallbackQueries, SEC_WEB_FALLBACK_PROVIDER } from "../domain
 import { expandLinkedPageSearch } from "./linked-page-search-orchestrator.js";
 import { normalizeSearchSources, uniqueSources } from "./search-source-normalizer.js";
 
-export function createAgenticSearchService({ config, apiKey, request, assertConfigured, researchTools = null, linkedPageResearch = null } = {}) {
+export function createAgenticSearchService({ config, apiKey, request, assertConfigured, researchTools = null, linkedPageResearch = null, recordUsage = () => {} } = {}) {
   async function webSearch({ companyName, queries = [], claims = [], signal, onToolCall, requestedTools = [] } = {}) {
     const researchText = [companyName, ...queries].join(" ");
     const requested = new Set(requestedTools);
@@ -109,7 +109,9 @@ export function createAgenticSearchService({ config, apiKey, request, assertConf
       })
     });
     if (!response.ok) throw new Error(await responseError(response, "DeepSeek WebSearch"));
-    return normalizeSearchSources(await response.json());
+    const payload = await response.json();
+    recordUsage(payload?.usage, "agentic_search");
+    return normalizeSearchSources(payload);
   }
 
   return { clinicalTrialsSearch, googleScholarSearch, webSearch };

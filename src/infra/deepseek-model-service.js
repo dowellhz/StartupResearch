@@ -14,9 +14,10 @@ export {
 } from "./agentic-search.js";
 export { normalizeSearchSources } from "./search-source-normalizer.js";
 
-export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetch, researchTools = null, linkedPageResearch = null } = {}) {
+export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetch, researchTools = null, linkedPageResearch = null, usageMeter = null } = {}) {
   if (!config) throw new Error("DeepSeek config is required");
   const apiKey = String(config.apiKey || "").trim();
+  const recordUsage = (usage, scope) => usageMeter?.record?.(usage, { scope, model: config.model });
 
   async function complete(messages, options = {}) {
     assertConfigured();
@@ -28,22 +29,24 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
       ...(options.json ? { response_format: { type: "json_object" } } : {}),
       messages
     }, options.signal);
+    recordUsage(payload.usage, options.usageScope || "complete");
     return String(payload.choices?.[0]?.message?.content || "").trim();
   }
 
-  async function stream(messages, { signal, onDelta, maxTokens = 12000, thinking = false } = {}) {
+  async function stream(messages, { signal, onDelta, maxTokens = 12000, thinking = false, usageScope = "stream" } = {}) {
     assertConfigured();
-    const response = await fetchWithRetry(config.baseUrl, {
-      method: "POST",
-      signal,
-      headers: requestHeaders(apiKey),
-      body: JSON.stringify({ model: config.model, temperature: 0.1, max_tokens: maxTokens, thinking: { type: thinking ? "enabled" : "disabled" }, stream: true, messages })
-    });
+    let response = await streamRequest(messages, { signal, maxTokens, thinking, includeUsage: true });
+    if (response.status === 400) {
+      // 少数 OpenAI 兼容网关不认 stream_options，降级重试一次；只损失 token 计量，不影响回答。
+      await response.body?.cancel().catch(() => {});
+      response = await streamRequest(messages, { signal, maxTokens, thinking, includeUsage: false });
+    }
     if (!response.ok) throw new Error(await responseError(response, "DeepSeek stream"));
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let pending = "";
     let content = "";
+    let usage = null;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -55,7 +58,9 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
         const data = line.slice(5).trim();
         if (!data || data === "[DONE]") continue;
         try {
-          const delta = JSON.parse(data).choices?.[0]?.delta?.content || "";
+          const chunk = JSON.parse(data);
+          if (chunk.usage) usage = chunk.usage;
+          const delta = chunk.choices?.[0]?.delta?.content || "";
           if (delta) {
             content += delta;
             onDelta?.(delta);
@@ -63,7 +68,25 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
         } catch {}
       }
     }
+    recordUsage(usage, usageScope);
     return content.trim();
+  }
+
+  function streamRequest(messages, { signal, maxTokens, thinking, includeUsage }) {
+    return fetchWithRetry(config.baseUrl, {
+      method: "POST",
+      signal,
+      headers: requestHeaders(apiKey),
+      body: JSON.stringify({
+        model: config.model,
+        temperature: 0.1,
+        max_tokens: maxTokens,
+        thinking: { type: thinking ? "enabled" : "disabled" },
+        stream: true,
+        ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
+        messages
+      })
+    });
   }
 
   async function planFollowupResearch({ companyName, report, history = [], question, signal } = {}) {
@@ -120,7 +143,7 @@ export function createDeepSeekModelService({ config, fetchImpl = globalThis.fetc
     }
   }
 
-  const search = createAgenticSearchService({ config, apiKey, request: fetchWithRetry, assertConfigured, researchTools, linkedPageResearch });
+  const search = createAgenticSearchService({ config, apiKey, request: fetchWithRetry, assertConfigured, researchTools, linkedPageResearch, recordUsage });
   return { ...search, complete, planFollowupResearch, stream };
 }
 

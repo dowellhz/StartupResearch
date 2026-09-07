@@ -4,7 +4,7 @@ export function createReanalyzeController({ state, requestJson, renderProgress, 
   return async function reanalyzeCurrentReview() {
     const taskType = state.currentReview?.taskType || "attachment_review";
     const message = confirmationMessage(taskType);
-    if (!state.currentId || !confirmImpl(message)) return;
+    if (!state.currentId || !await confirmImpl(message)) return;
     try {
       const payload = await requestJson(`/api/reviews/${state.currentId}/reanalyze`, {
         method: "POST",

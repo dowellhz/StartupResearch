@@ -14,6 +14,8 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
   let index = new Map();
   let initialization;
   let indexWrite = Promise.resolve();
+  let indexWriteChain = Promise.resolve();
+  let indexWritePending = false;
 
   function initialize() {
     if (!initialization) initialization = initializeOnce();
@@ -210,8 +212,16 @@ export function createFileReviewRepository({ dataDir, now = () => new Date().toI
       .slice(0, Math.max(0, Number(limit) || 0));
   }
 
+  // 索引是全量重写的：流水线每个阶段都会 save 一次，逐次写会造成 O(任务总数) 的写放大。
+  // 已排队但尚未开始的写直接复用——写入时才快照 index，因此后到的变更同样会被落盘。
   function persistIndex() {
-    indexWrite = indexWrite.then(() => writeAtomic(indexPath, JSON.stringify({ version: 1, jobs: [...index.values()] }, null, 2)));
+    if (indexWritePending) return indexWrite;
+    indexWritePending = true;
+    indexWrite = indexWriteChain.then(() => {
+      indexWritePending = false;
+      return writeAtomic(indexPath, JSON.stringify({ version: 1, jobs: [...index.values()] }, null, 2));
+    });
+    indexWriteChain = indexWrite.catch(() => {});
     return indexWrite;
   }
 

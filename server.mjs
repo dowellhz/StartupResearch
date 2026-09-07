@@ -23,15 +23,19 @@ import { createBrowserSessionService } from "./src/infra/browser-session-service
 import { createBoundedTaskQueue } from "./src/infra/bounded-task-queue.js";
 import { createDocumentExtractionService } from "./src/infra/document-extraction-service.js";
 import { createEvidenceVerificationService } from "./src/infra/evidence-verification-service.js";
+import { commitUsage, expensiveRequestCost, shouldRefundUsage } from "./src/infra/expensive-request-usage.js";
+import { createFollowupStreamController } from "./src/infra/followup-stream-controller.js";
 import { createGoogleAuthService } from "./src/infra/google-auth-service.js";
 import { createLinkedPageResearchService } from "./src/infra/linked-page-research-service.js";
 import { createPdfReportService } from "./src/infra/pdf-report-service.js";
 import { createPdfWorkerExtractionService } from "./src/infra/pdf-worker-extraction-service.js";
 import { createJsonlLogger } from "./src/infra/jsonl-logger.js";
+import { createModelUsageMeter } from "./src/infra/model-usage-meter.js";
 import { acquireProcessLease } from "./src/infra/process-lease.js";
-import { publicError } from "./src/infra/public-error.js";
+import { operationalError, publicError } from "./src/infra/public-error.js";
 import { createPublicAssetService } from "./src/infra/public-asset-service.js";
 import { createRateLimiter, requestClientKey } from "./src/infra/rate-limiter.js";
+import { applySecurityHeaders, isHttpsRequest } from "./src/infra/security-headers.js";
 import { createStructuredResearchToolService } from "./src/infra/research-tools/structured-research-tool-service.js";
 import { sanitizeVisibleFilename } from "./public/privacy-redaction.js";
 import { createFileReviewRepository } from "./src/storage/file-review-repository.js";
@@ -51,7 +55,8 @@ const pdfExtractionQueue = createBoundedTaskQueue({ concurrency: config.document
 const pdfExtractor = createPdfWorkerExtractionService({ timeoutMs: config.documents.pdfTimeoutMs, queue: pdfExtractionQueue });
 const extractor = createDocumentExtractionService({ maxBytes: config.maxUploadBytes, pdfExtractor });
 const linkedPageResearch = createLinkedPageResearchService({ documentExtractor: extractor });
-const model = createDeepSeekModelService({ config: config.model, researchTools, linkedPageResearch });
+const modelUsage = createModelUsageMeter({ logger });
+const model = createDeepSeekModelService({ config: config.model, researchTools, linkedPageResearch, usageMeter: modelUsage });
 const technologyResearchTool = createTechnologyResearchToolService({ model, webResearchEnabled: config.webResearchEnabled });
 const comparableCompanyResearchTool = createComparableCompanyResearchToolService({ model, webResearchEnabled: config.webResearchEnabled });
 const companyIdentity = createCompanyIdentityService({ extractor, model });
@@ -60,7 +65,7 @@ const evidenceVerification = createEvidenceVerificationService();
 const evidenceRefresh = createEvidenceRefreshService({ model, repository });
 const semanticQuality = createSemanticOverclaimService({ model, enabled: config.semanticQualityCheckEnabled });
 const pdf = createPdfReportService();
-const researchTaskQueue = createBoundedTaskQueue({ concurrency: config.jobs.globalConcurrency });
+const researchTaskQueue = createBoundedTaskQueue({ concurrency: config.jobs.globalConcurrency, maxPending: config.jobs.queueLimit });
 const pipeline = createBpReviewPipeline({ extractor, model, repository, pdfReportService: pdf, investmentAnalysisService: investmentAnalysis, evidenceVerificationService: evidenceVerification, semanticQualityService: semanticQuality, technologyResearchTool, comparableCompanyResearchTool, webResearchEnabled: config.webResearchEnabled });
 const companyResearchPipeline = createCompanyPreResearchPipeline({ model, repository, pdfReportService: pdf, technologyResearchTool, comparableCompanyResearchTool, webResearchEnabled: config.webResearchEnabled });
 const industryResearchPipeline = createIndustryResearchPipeline({ model, repository, pdfReportService: pdf, webResearchEnabled: config.webResearchEnabled });
@@ -80,6 +85,7 @@ const expensiveRateLimiter = createRateLimiter({ windowMs: config.security.reque
 const usageBudget = createFileUsageBudget({ dataDir: config.dataDir, ownerDailyLimit: config.security.ownerDailyCostUnits, globalDailyLimit: config.security.globalDailyCostUnits });
 const retention = createDataRetentionService({ dataDir: config.dataDir, repository, retentionDays: config.retention.days, graceDays: config.retention.graceDays, logger });
 const lazyPdf = createLazyPdfService({ repository, pdf, titleFor: reportTitle });
+const followupStream = createFollowupStreamController({ manager, writeSse, logger });
 const retentionTimer = setInterval(() => {
   void retention.cleanup().catch((error) => logger.error("retention.cleanup_failed", { error }));
 }, 24 * 60 * 60 * 1000);
@@ -88,12 +94,13 @@ retentionTimer.unref();
 const server = http.createServer(async (req, res) => {
   req.requestId = randomUUID();
   res.setHeader("X-Request-Id", req.requestId);
+  applySecurityHeaders(res, { https: isHttpsRequest(req) });
   try {
     await route(req, res);
   } catch (error) {
     if (res.headersSent) return res.end();
     const failure = publicError(error, { requestId: req.requestId });
-    if (failure.status < 500 && req.usageReceipt) await usageBudget.refund(req.usageReceipt);
+    if (shouldRefundUsage(req)) await usageBudget.refund(req.usageReceipt);
     await logger.error("http.request_failed", { requestId: req.requestId, method: req.method, path: req.url, error });
     if (error.retryAfterSeconds) res.setHeader("Retry-After", error.retryAfterSeconds);
     json(res, failure.status, failure.body);
@@ -134,6 +141,7 @@ async function route(req, res) {
       googleAuthRequired: googleAuth.required,
       webResearchEnabled: config.webResearchEnabled,
       researchTaskQueue: researchTaskQueue.snapshot(),
+      modelUsage: modelUsage.snapshot(),
       zeroKeyResearchTools: researchTools.zeroKeyNames(),
       keyedResearchTools: researchTools.keyedStatus()
     });
@@ -206,8 +214,9 @@ async function route(req, res) {
 async function matchAndRouteBp(req, res, id, ownerId) {
   const body = await readJson(req, config.maxUploadBytes * 1.42 + 1024 * 1024);
   validateUploadBody(body);
-  if (Array.isArray(body.files) && body.files.length > 1) throw Object.assign(new Error("已有对话中一次只能上传一份新版资料"), { statusCode: 400 });
+  if (Array.isArray(body.files) && body.files.length > 1) throw operationalError("已有对话中一次只能上传一份新版资料", { statusCode: 400, code: "single_upload_only" });
   const current = await manager.get(id, { ownerId });
+  commitUsage(req);
   const decision = await companyIdentity.judgeSameCompany({
     currentCompanyName: current.companyName,
     currentReport: current.report,
@@ -248,30 +257,12 @@ async function streamAnswer(req, res, id, ownerId) {
     Connection: "keep-alive",
     "X-Accel-Buffering": "no"
   });
-  const controller = new AbortController();
-  res.on("close", () => {
-    if (!res.writableEnded) void logger.info("followup.client_disconnected", { requestId: req.requestId, jobId: id });
-  });
-  try {
-    const answer = await manager.ask(id, body.message, {
-      ownerId,
-      signal: controller.signal,
-      onStatus: (message) => writeSse(res, { type: "status", data: { message } }),
-      onProgress: (progress) => writeSse(res, { type: "progress", data: progress }),
-      onDelta: (delta) => writeSse(res, { type: "delta", data: { delta } })
-    });
-    writeSse(res, { type: "done", data: { answer } });
-  } catch (error) {
-    await logger.error("followup.stream_failed", { requestId: req.requestId, jobId: id, error });
-    const failure = publicError(error, { requestId: req.requestId });
-    writeSse(res, { type: "error", data: { message: failure.body.error, requestId: req.requestId } });
-  }
-  res.end();
+  return followupStream.stream(req, res, { id, ownerId, message: body.message });
 }
 
 async function downloadPdf(res, id, ownerId) {
   const review = await manager.get(id, { ownerId });
-  if (!review.report) throw Object.assign(new Error("报告尚未生成"), { statusCode: 409 });
+  if (!review.report) throw operationalError("报告尚未生成", { statusCode: 409, code: "report_not_ready" });
   const buffer = await lazyPdf.getOrRender(review);
   const filename = encodeURIComponent(`${safeFilename(review.companyName || "研究")}-${reportTitle(review).replace(`${review.companyName || "未命名主题"} `, "")}.pdf`);
   res.writeHead(200, {
@@ -307,38 +298,38 @@ async function readJson(req, maxBytes) {
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > maxBytes) throw Object.assign(new Error("请求内容过大"), { statusCode: 413 });
+    if (size > maxBytes) throw operationalError("请求内容过大", { statusCode: 413, code: "payload_too_large" });
     chunks.push(chunk);
   }
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
   } catch {
-    throw Object.assign(new Error("请求 JSON 无效"), { statusCode: 400 });
+    throw operationalError("请求 JSON 无效", { statusCode: 400, code: "invalid_json" });
   }
 }
 
 function validateUploadBody(body) {
   const files = inputUploads(body);
-  if (!files.length || files.some((file) => !file?.data || !file?.filename)) throw Object.assign(new Error("请上传 BP 文件"), { statusCode: 400 });
-  if (files.length > 8) throw Object.assign(new Error("首次最多上传 8 份资料"), { statusCode: 400 });
+  if (!files.length || files.some((file) => !file?.data || !file?.filename)) throw operationalError("请上传 BP 文件", { statusCode: 400, code: "upload_required" });
+  if (files.length > 8) throw operationalError("首次最多上传 8 份资料", { statusCode: 400, code: "upload_count_exceeded" });
   const bytes = files.reduce((total, file) => total + Buffer.byteLength(String(file.data || ""), "base64"), 0);
-  if (bytes > config.maxUploadBytes) throw Object.assign(new Error("所有资料合计不能超过上传大小限制"), { statusCode: 413 });
+  if (bytes > config.maxUploadBytes) throw operationalError("所有资料合计不能超过上传大小限制", { statusCode: 413, code: "upload_too_large" });
 }
 
 function validateCompanyResearchBody(body) {
-  if (!String(body.companyName || "").trim()) throw Object.assign(new Error("公司预研需要填写公司名称"), { statusCode: 400 });
+  if (!String(body.companyName || "").trim()) throw operationalError("公司预研需要填写公司名称", { statusCode: 400, code: "company_name_required" });
 }
 
 function validateIndustryResearchBody(body) {
-  if (!String(body.companyName || "").trim()) throw Object.assign(new Error("行业研究需要填写行业或技术主题"), { statusCode: 400 });
+  if (!String(body.companyName || "").trim()) throw operationalError("行业研究需要填写行业或技术主题", { statusCode: 400, code: "industry_topic_required" });
 }
 
 function validatePaperAnalysisBody(body) {
   if (!body.file?.data && !/^https?:\/\//i.test(String(body.sourceUrl || ""))) {
-    throw Object.assign(new Error("论文解读需要上传 PDF 或填写论文 URL"), { statusCode: 400 });
+    throw operationalError("论文解读需要上传 PDF 或填写论文 URL", { statusCode: 400, code: "paper_source_required" });
   }
   if (body.file && !/\.pdf$/i.test(String(body.file.filename || "")) && !/application\/pdf/i.test(String(body.file.mimeType || ""))) {
-    throw Object.assign(new Error("论文解读仅支持 PDF 文件"), { statusCode: 400 });
+    throw operationalError("论文解读仅支持 PDF 文件", { statusCode: 400, code: "paper_pdf_only" });
   }
 }
 
@@ -386,17 +377,11 @@ server.listen(config.port, config.host, async () => {
   const jobs = await repository.list({ limit: 100 });
   const recovery = await recoverActiveReviews({ jobs, manager, staleAfterMs: config.recovery.staleAfterMs });
   await logger.info("server.recovery_completed", { resumed: recovery.resumed.length, failed: recovery.failed.length, refreshes: recovery.refreshes.length });
+  if (config.production && !(config.retention.days > 0)) {
+    await logger.warn("retention.disabled", { hint: "DATA_RETENTION_DAYS=0：上传的 BP 原件、报告与 PDF 将无限期保留，请显式设置保留天数" });
+  }
   void retention.cleanup().catch((error) => logger.error("retention.cleanup_failed", { error }));
 });
-
-function expensiveRequestCost(method, pathname) {
-  if (method !== "POST") return 0;
-  if (pathname === "/api/reviews") return 10;
-  if (/\/messages$/.test(pathname)) return 3;
-  if (/\/(?:retry|reanalyze|company-match)$/.test(pathname)) return 10;
-  if (/\/refresh$/.test(pathname)) return 5;
-  return 0;
-}
 
 async function shutdown(signal) {
   clearInterval(retentionTimer);
