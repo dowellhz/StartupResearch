@@ -1,3 +1,4 @@
+import { citationFindings, citationUrl, resolveReportCitations } from "./report-citation-service.js";
 import { resolveIndustryResearchTemplate } from "./industry-research-prompts.js";
 import { isEnglishOutput } from "./report-language.js";
 
@@ -9,7 +10,7 @@ export function stabilizeIndustryResearchReport(markdown, { topic, outputLanguag
   for (const section of sections) {
     if (!report.includes(`## ${section}`)) report += `\n\n## ${section}\n\n${fallback(section, sources, english)}`;
   }
-  return report.trim();
+  return resolveReportCitations(report.trim(), { sources, outputLanguage }).report;
 }
 
 export function assessIndustryResearchQuality(markdown, { outputLanguage, researchTemplate, sources = [], synthesis = {}, warnings = [] } = {}) {
@@ -17,7 +18,7 @@ export function assessIndustryResearchQuality(markdown, { outputLanguage, resear
   const selected = resolveIndustryResearchTemplate(researchTemplate, outputLanguage);
   const required = [english ? "Research Conclusion Summary" : "研究结论摘要", ...selected.sections, english ? "References" : "参考来源"];
   const present = required.filter((section) => String(markdown).includes(`## ${section}`)).length;
-  const findings = [];
+  const findings = citationFindings(markdown, { sources, outputLanguage });
   const sourceCount = sources.length;
   const factCount = Array.isArray(synthesis.findings) ? synthesis.findings.length : 0;
   let score = Math.round((present / required.length) * 30);
@@ -40,8 +41,8 @@ export function assessIndustryResearchQuality(markdown, { outputLanguage, resear
 }
 
 function citationUrlsAreKnown(markdown, sources) {
-  const known = new Set(sources.map((source) => source.url));
-  return Array.from(String(markdown).matchAll(/\]\((https?:\/\/[^)\s]+)\)/g), (match) => match[1]).every((url) => known.has(url));
+  const known = new Set(sources.map((source) => citationUrl(source.url)).filter(Boolean));
+  return Array.from(String(markdown).matchAll(/\]\((https?:\/\/[^)\s]+)\)/g), (match) => match[1]).every((url) => known.has(citationUrl(url)));
 }
 
 function fallback(section, sources, english = false) {

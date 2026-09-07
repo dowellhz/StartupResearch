@@ -1,3 +1,4 @@
+import { citationFindings, citationUrl, resolveReportCitations } from "./report-citation-service.js";
 import { reportSections } from "./review-prompts.js";
 import { isEnglishOutput } from "./report-language.js";
 import { hasEvidenceExcerpt, normalizeEvidenceSources } from "./research-evidence-service.js";
@@ -11,7 +12,7 @@ const OVERCLAIM_PATTERNS = [
 
 export function assessReportQuality(markdown, options = {}) {
   const text = String(markdown || "").trim();
-  const findings = [];
+  const findings = citationFindings(text, options);
   const sources = normalizeEvidenceSources(options.sources || []);
   const sourceCount = sources.length || Number(options.sourceCount || 0);
   const components = {
@@ -70,7 +71,7 @@ export function stabilizeReport(markdown, options = {}) {
       ? "\n\n> Review limitation: this run produced no usable public sources. The findings rely on BP claims and model analysis and require independent due diligence."
       : "\n\n> 核查限制：本次联网检索未形成可用公开来源，相关判断仅基于 BP 自述与模型分析，需独立尽调。";
   }
-  return result.trim();
+  return resolveReportCitations(result.trim(), options).report;
 }
 
 function assessStructure(text, findings, outputLanguage) {
@@ -148,9 +149,9 @@ function assessReasoning(text, sources, findings) {
     score -= Math.min(6, matches.length * 3);
     findings.push(finding(rule.code, "warn", `${rule.message}（${matches.length} 处）`));
   }
-  const allowedUrls = new Set(sources.map((source) => source.url));
+  const allowedUrls = new Set(sources.map((source) => citationUrl(source.url)).filter(Boolean));
   const reportUrls = Array.from(text.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g), (match) => normalizeUrl(match[1])).filter(Boolean);
-  const outsideUrls = Array.from(new Set(reportUrls.filter((url) => !allowedUrls.has(url))));
+  const outsideUrls = Array.from(new Set(reportUrls.filter((url) => !allowedUrls.has(citationUrl(url)))));
   if (outsideUrls.length) {
     score -= Math.min(5, outsideUrls.length * 2);
     findings.push(finding("citation_provenance_invalid", "warn", `报告引用了 ${outsideUrls.length} 个未进入证据列表的链接`));

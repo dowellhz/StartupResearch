@@ -1,3 +1,4 @@
+import { citationFindings, citationUrl, resolveReportCitations } from "./report-citation-service.js";
 import { companyResearchSections } from "./company-pre-research-prompts.js";
 import { isEnglishOutput } from "./report-language.js";
 import { buildCompanyResearchConclusionSummary, ensureLeadingSummary } from "./report-summary-service.js";
@@ -26,19 +27,19 @@ export function stabilizeCompanyResearchReport(markdown, options = {}) {
       ? "\n\n> Research limitation: this run produced no usable public sources; all conclusions require subsequent due diligence."
       : "\n\n> 预研限制：本次公开检索未形成可引用来源，所有结论均需后续尽调验证。";
   }
-  return result.trim();
+  return resolveReportCitations(result.trim(), options).report;
 }
 
 export function assessCompanyResearchQuality(markdown, { outputLanguage, sources = [], analysis = {}, generationWarning = "", researchWarning = "" } = {}) {
   const text = String(markdown || "");
-  const findings = [];
+  const findings = citationFindings(text, { sources, outputLanguage });
   const sections = companyResearchSections(outputLanguage);
   const presentSections = sections.filter((section) => text.includes(`## ${section}`)).length;
   const sourceCount = Array.isArray(sources) ? sources.length : 0;
   const factCount = Array.isArray(analysis.findings) ? analysis.findings.length : 0;
-  const validUrls = new Set(sources.map((source) => source.url));
+  const validUrls = new Set(sources.map((source) => citationUrl(source.url)).filter(Boolean));
   const citedUrls = Array.from(text.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g), (match) => match[1]);
-  const outsideUrls = Array.from(new Set(citedUrls.filter((url) => !validUrls.has(url))));
+  const outsideUrls = Array.from(new Set(citedUrls.filter((url) => !validUrls.has(citationUrl(url)))));
   let score = Math.min(25, Math.round((presentSections / sections.length) * 25));
   score += text.length >= 1600 ? 20 : text.length >= 800 ? 12 : 5;
   score += Math.min(25, sourceCount * 3);

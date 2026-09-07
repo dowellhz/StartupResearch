@@ -1,3 +1,4 @@
+import { resolveReportCitations } from "./report-citation-service.js";
 const BP_SUMMARY_HEADING = "核查结论摘要";
 const COMPANY_SUMMARY_HEADING = "预研结论摘要";
 
@@ -62,7 +63,7 @@ export function buildCompanyResearchConclusionSummary({ companyName, sources = [
 }
 
 export function normalizeReviewReport(review, markdown = review?.report) {
-  const text = String(markdown || "").trim();
+  const text = resolveReportCitations(String(markdown || "").trim(), review || {}).report;
   if (text && !/^#[ \t]+/m.test(text)) return text;
   if (review?.outputLanguage === "en") return text;
   const taskType = review?.taskType || "attachment_review";

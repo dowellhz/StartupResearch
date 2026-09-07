@@ -1,3 +1,4 @@
+import { citationFindings, resolveReportCitations } from "./report-citation-service.js";
 import { paperAnalysisSections } from "./paper-analysis-prompts.js";
 import { isEnglishOutput } from "./report-language.js";
 
@@ -8,7 +9,7 @@ export function stabilizePaperAnalysisReport(markdown, { title, outputLanguage, 
   for (const section of sections) {
     if (!report.includes(`## ${section}`)) report += `\n\n## ${section}\n\n${fallback(section, sources, sourceUrl, english)}`;
   }
-  return report.trim();
+  return resolveReportCitations(report.trim(), { sources, outputLanguage }).report;
 }
 
 export function assessPaperAnalysisQuality(markdown, { outputLanguage, document = {}, metadata = {}, sources = [], sourceUrl = "", warnings = [] } = {}) {
@@ -17,7 +18,7 @@ export function assessPaperAnalysisQuality(markdown, { outputLanguage, document 
   const present = sections.filter((section) => text.includes(`## ${section}`)).length;
   const technical = isEnglishOutput(outputLanguage) ? ["Technical Problem", "Method Architecture", "Core Algorithms or Formulas", "Training or Inference Workflow", "Experimental Design and Metrics", "Engineering Constraints", "Reproduction Challenges"] : ["技术问题", "方法架构", "核心算法或公式", "训练或推理流程", "实验设计与指标", "工程实现约束", "复现难点"];
   const technicalPresent = technical.filter((section) => text.includes(`### ${section}`)).length;
-  const findings = [];
+  const findings = citationFindings(text, { sources, outputLanguage });
   let score = Math.round((present / sections.length) * 25);
   score += Math.round((technicalPresent / technical.length) * 20);
   score += text.length >= 2600 ? 20 : text.length >= 1400 ? 12 : 5;
