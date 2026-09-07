@@ -67,6 +67,8 @@ export function escapeHtml(value) {
 
 function inlineMarkdown(value) {
   return escapeHtml(value)
+    .replace(/&lt;a id=&quot;(source_\d+)&quot;&gt;&lt;\/a&gt;/g, '<span class="reference-anchor" id="$1"></span>')
+    .replace(/\[([^\]]+)\]\(#(source_\d+)\)/g, '<a class="citation-link" href="#$2">$1</a>')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, (_, label, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code>$1</code>");

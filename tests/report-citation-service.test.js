@@ -17,9 +17,10 @@ test("resolves actual evidence IDs in prose, lists and tables into clickable lin
   const markdown = "WIRED为16亿元（source_19），Yahoo为2.26亿美元（source_3）。\n- 来源：source_19、[source_3]\n| 指标 | source_19 |";
   const result = resolveReportCitations(markdown, { sources });
   assert.deepEqual(result.unresolvedIds, []);
-  assert.match(result.report, /\[来源 19\]\(https:\/\/www.wired.com/);
-  assert.match(result.report, /\[来源 3\]\(https:\/\/tech.yahoo.com/);
-  assert.doesNotMatch(result.report, /source_\d/);
+  assert.match(result.report, /\[来源 19\]\(#source_19\)/);
+  assert.match(result.report, /\[来源 3\]\(#source_3\)/);
+  assert.match(markdownToHtml(result.report), /href="#source_19"/);
+  assert.match(markdownToHtml(result.report), /id="source_19"/);
   assert.match(markdownToHtml(result.report), /href="https:\/\/www.wired.com\/story\/example\/\?a=1&amp;b=2"/);
   assert.equal(resolveReportCitations(result.report, { sources }).report, result.report);
 });

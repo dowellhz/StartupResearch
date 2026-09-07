@@ -347,6 +347,8 @@ function renderFooters(doc, label = "VentureLens") {
 
 function cleanMarkdown(value) {
   return String(value || "")
+    .replace(/<a id="source_\d+"><\/a>/g, "")
+    .replace(/\[([^\]]+)\]\(#source_\d+\)/g, "$1")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)")
     .replace(/[*_`]/g, "")
     .trim();

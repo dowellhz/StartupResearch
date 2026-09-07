@@ -2,6 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { markdownToHtml } from "../public/markdown-renderer.js";
 
+test("citations navigate within the report while reference URLs open externally", () => {
+  const html = markdownToHtml('正文 [来源 19](#source_19)\n\n## 参考来源\n- <a id="source_19"></a> [WIRED](https://www.wired.com/)');
+  assert.match(html, /<a class="citation-link" href="#source_19">来源 19<\/a>/);
+  assert.match(html, /<span class="reference-anchor" id="source_19"><\/span>/);
+  assert.match(html, /href="https:\/\/www.wired.com\/" target="_blank"/);
+  assert.doesNotMatch(html, /href="#source_19" target=/);
+  const unsafe = markdownToHtml('<a id="source_19" onclick="alert(1)"></a>');
+  assert.doesNotMatch(unsafe, /<a |<span /);
+});
+
 test("report Markdown renders emphasis, ordered lists, headings, and tables", () => {
   const html = markdownToHtml("**总判断**：内容\n\n1. **投资要点**\n\n## 团队\n\n#### 主题一：AI 数学教育（近期可布局）\n\n| 姓名 | 职位 |\n|---|---|\n| 张三 | CEO |");
   assert.match(html, /<strong>总判断<\/strong>/);

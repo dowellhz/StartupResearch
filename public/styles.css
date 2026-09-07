@@ -173,6 +173,8 @@ svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .report-content ul, .report-content ol { padding-left: 20px; }
 .report-content blockquote { margin: 13px 0; border-left: 3px solid var(--accent); padding: 7px 13px; color: var(--muted); background: #f7f2ed; }
 .report-content a { color: var(--accent-dark); text-underline-offset: 2px; }
+.reference-anchor { scroll-margin-top: 90px; }
+.reference-anchor:target { background: #ffe3a3; outline: 3px solid #ffe3a3; }
 .table-wrap { overflow-x: auto; margin: 14px 0; }
 .report-content table { border-collapse: collapse; width: 100%; font-size: 12px; line-height: 1.55; }
 .report-content th { background: #efebe4; font-weight: 700; }
