@@ -1,4 +1,5 @@
 import { citationUrl, citationDocumentUrl } from "./report-source-url.js";
+import { numberReportReferences } from "./report-reference-numbering.js";
 export { citationUrl } from "./report-source-url.js";
 
 import { createUnverifiedReferenceIndex, ensureReferenceTargets } from "./report-reference-service.js";
@@ -61,7 +62,8 @@ export function resolveReportCitations(markdown, { sources = [], outputLanguage 
         return token + (alreadyMarked ? "" : marker);
       });
   }).join("\n");
-  return { report: ensureReferenceTargets(report, references, { outputLanguage }), unresolvedIds: [...unresolved] };
+  const withTargets = ensureReferenceTargets(report, references, { outputLanguage });
+  return { report: numberReportReferences(withTargets, { outputLanguage }), unresolvedIds: [...unresolved] };
 }
 
 export function citationFindings(markdown, options = {}) {

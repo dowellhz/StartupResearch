@@ -17,8 +17,8 @@ test("resolves actual evidence IDs in prose, lists and tables into clickable lin
   const markdown = "WIRED为16亿元（source_19），Yahoo为2.26亿美元（source_3）。\n- 来源：source_19、[source_3]\n| 指标 | source_19 |";
   const result = resolveReportCitations(markdown, { sources });
   assert.deepEqual(result.unresolvedIds, []);
-  assert.match(result.report, /\[来源 19\]\(#source_19\)/);
-  assert.match(result.report, /\[来源 3\]\(#source_3\)/);
+  assert.match(result.report, /\[来源 1\]\(#source_19\)/);
+  assert.match(result.report, /\[来源 2\]\(#source_3\)/);
   assert.match(markdownToHtml(result.report), /href="#source_19"/);
   assert.match(markdownToHtml(result.report), /id="source_19"/);
   assert.match(markdownToHtml(result.report), /href="https:\/\/www.wired.com\/story\/example\/\?a=1&amp;b=2"/);
@@ -50,7 +50,7 @@ test("legacy reports resolve citations in every task type and both languages", (
     for (const outputLanguage of ["zh", "en"]) {
       const report = normalizeReviewReport({ taskType, outputLanguage, sources }, "Existing report source_19");
       assert.match(report, /\]\(https:\/\/www.wired.com/);
-      assert.match(report, outputLanguage === "en" ? /\[Source 19\]/ : /\[来源 19\]/);
+      assert.match(report, outputLanguage === "en" ? /\[Source 1\]/ : /\[来源 1\]/);
     }
   }
 });
@@ -64,7 +64,7 @@ test("all report quality gates resolve known citations and flag unmatched refere
   ]) {
     const options = { sources, outputLanguage: "zh" };
     const report = stabilize("# Report\n\nEvidence source_19, unknown source_99", options);
-    assert.match(report, /\[来源 19\]/);
+    assert.match(report, /\[来源 1\]/);
     assert.match(report, /source_99（来源未匹配）/);
     const quality = assess(report, options);
     assert.equal(quality.ok, false);

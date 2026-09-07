@@ -22,7 +22,7 @@ test("unknown URLs get distinct display references marked as unverified, not mat
   const original = "[WIRED](https://www.wired.com/story/another/)";
   const options = { sources: [source] };
   const result = resolveReportCitations(original, options);
-  assert.match(result.report, /^\[来源 20\]\(#source_20\)/);
+  assert.match(result.report, /^\[来源 1\]\(#source_20\)/);
   assert.doesNotMatch(result.report, /#source_19/);
   assert.match(result.report, /未进入证据表，待核验/);
   assert.match(result.report, /\[WIRED\]\(https:\/\/www.wired.com\/story\/another\/\)/);
@@ -54,8 +54,8 @@ test("migrates previous direct citations to internal links and retains external 
   const original = `正文 [来源 19](${source.url})。\n\n## 参考来源\n- [WIRED](${source.url})`;
   const options = { sources: [source] };
   const { report } = resolveReportCitations(original, options);
-  assert.match(report, /^正文 \[来源 19\]\(#source_19\)/);
-  assert.match(report, /<a id="source_19"><\/a> \[WIRED\]\(https:/);
+  assert.match(report, /^正文 \[来源 1\]\(#source_19\)/);
+  assert.match(report, /<a id="source_19"><\/a> \*\*来源 1\*\*：\[WIRED\]\(https:/);
   assert.equal(resolveReportCitations(report, options).report, report);
 });
 
